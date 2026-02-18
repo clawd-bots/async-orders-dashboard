@@ -69,10 +69,10 @@ function App() {
     const headers = ['Order Number', 'Date', 'Customer', 'Items', 'Total'];
     const rows = orders.map(o => [
       o.name,
-      new Date(o.created_at).toLocaleDateString(),
-      o.customer?.first_name + ' ' + o.customer?.last_name,
-      o.line_items?.map(i => `${i.quantity}x ${i.title}`).join('; '),
-      o.total_price + ' ' + o.currency
+      new Date(o.createdAt).toLocaleDateString(),
+      o.customer?.firstName + ' ' + o.customer?.lastName,
+      o.lineItems?.map(i => `${i.quantity}x ${i.title}`).join('; '),
+      o.totalPrice?.amount + ' ' + o.totalPrice?.currencyCode
     ]);
     
     const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
@@ -241,18 +241,18 @@ function App() {
                   <tr key={order.id} style={{ borderTop: i > 0 ? `1px solid ${C.beige}` : 'none' }}>
                     <td style={{ padding: '12px 16px', fontWeight: 600, color: C.accent }}>{order.name}</td>
                     <td style={{ padding: '12px 16px', fontSize: 14, color: C.gray }}>
-                      {new Date(order.created_at).toLocaleDateString()}
+                      {new Date(order.createdAt).toLocaleDateString()}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 14 }}>
-                      {order.customer?.first_name} {order.customer?.last_name}
+                      {order.customer?.firstName} {order.customer?.lastName}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13 }}>
-                      {order.line_items?.map((item, j) => (
+                      {order.lineItems?.map((item, j) => (
                         <div key={j}>{item.quantity}× {item.title}</div>
                       ))}
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 600 }}>
-                      {order.currency} {parseFloat(order.total_price).toLocaleString()}
+                      {order.totalPrice?.currencyCode} {parseFloat(order.totalPrice?.amount).toLocaleString()}
                     </td>
                   </tr>
                 ))}
