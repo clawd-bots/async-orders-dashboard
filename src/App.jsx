@@ -20,11 +20,13 @@ function App() {
   const [lastFetch, setLastFetch] = useState(null);
   const [configured, setConfigured] = useState(false);
 
-  // Check if API is configured
   useEffect(() => {
     fetch('/api/status')
       .then(r => r.json())
-      .then(data => setConfigured(data.configured))
+      .then(data => {
+        setConfigured(data.configured)
+        if (data.configured) fetchOrders()
+      })
       .catch(() => setConfigured(false));
   }, []);
 
@@ -158,7 +160,7 @@ function App() {
                 opacity: loading || !configured ? 0.6 : 1
               }}
             >
-              {loading ? 'Fetching...' : '📥 Fetch Orders'}
+              {loading ? 'Fetching...' : '🔄 Refresh Orders'}
             </button>
             
             <button
@@ -223,7 +225,7 @@ function App() {
           
           {orders.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: C.gray }}>
-              {configured ? 'Click "Fetch Orders" to load async orders' : 'Configure Shopify API to get started'}
+              {configured ? 'Loading orders...' : 'Configure Shopify API to get started'}
             </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
