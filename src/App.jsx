@@ -325,7 +325,15 @@ function App() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
           {/* Approved to Ship Time */}
           <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: C.dark, marginBottom: 4 }}>Approved to Ship Time</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>Approved to Ship Time</div>
+              {avgShipTime > 0 && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: C.dark }}>{avgShipTime.toFixed(1)}h</div>
+                  <div style={{ fontSize: 11, color: C.gray }}>↔ MTD</div>
+                </div>
+              )}
+            </div>
             <div style={{ fontSize: 11, color: C.gray, marginBottom: 16 }}>Average hours from approval to fulfillment · Target: 24h</div>
             {shipTimeData.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
@@ -339,7 +347,6 @@ function App() {
                     labelFormatter={(v) => v}
                   />
                   <ReferenceLine y={24} stroke={C.green} strokeDasharray="5 5" label={{ value: '24h target', fontSize: 10, fill: C.green, position: 'right' }} />
-                  <ReferenceLine y={avgShipTime} stroke={C.blue} strokeDasharray="3 3" label={{ value: `${avgShipTime.toFixed(1)}h avg`, fontSize: 10, fill: C.blue, position: 'left' }} />
                   <Line type="monotone" dataKey="avgShipTimeHours" stroke={C.accent} strokeWidth={2} dot={{ r: 3, fill: C.accent }} name="Avg Hours" />
                 </LineChart>
               </ResponsiveContainer>
@@ -352,8 +359,16 @@ function App() {
 
           {/* Orders Fulfilled Per Day (MTD) */}
           <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: C.dark, marginBottom: 4 }}>Orders Fulfilled Per Day</div>
-            <div style={{ fontSize: 11, color: C.gray, marginBottom: 16 }}>Provincial vs Metro · Excludes Sundays · Avg: {avgMetroPerDay.toFixed(0)} metro / {avgProvincialPerDay.toFixed(0)} provincial per day</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: C.dark }}>Orders Fulfilled Per Day</div>
+              {(avgMetroPerDay > 0 || avgProvincialPerDay > 0) && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: C.dark }}>{(avgMetroPerDay + avgProvincialPerDay).toFixed(0)} avg/day</div>
+                  <div style={{ fontSize: 11, color: C.gray }}>({avgMetroPerDay.toFixed(0)} metro · {avgProvincialPerDay.toFixed(0)} provincial)</div>
+                </div>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: C.gray, marginBottom: 16 }}>Provincial vs Metro · Excludes Sundays</div>
             {fulfilledData.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={fulfilledData}>
