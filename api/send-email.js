@@ -53,6 +53,9 @@ export default async function handler(req, res) {
               preferredDeliveryDateMetafield: metafield(namespace: "custom", key: "preferred_delivery_data") {
                 value
               }
+              prescriptionStatusMetafield: metafield(namespace: "custom", key: "prescription_status") {
+                value
+              }
               discountCodes
             }
           }
@@ -93,8 +96,10 @@ export default async function handler(req, res) {
         const node = edge.node;
         const metafield = node.metafield;
         const val = metafield?.value?.toLowerCase?.() || '';
-        const approvedToShip = val === 'true' || val === '1' || val === 'yes';
-        const approvedAt = approvedToShip ? (metafield?.updatedAt || null) : null;
+        let approvedToShip = null;
+        if (val === 'true' || val === '1' || val === 'yes') approvedToShip = true;
+        else if (val === 'false' || val === '0' || val === 'no') approvedToShip = false;
+        const approvedAt = approvedToShip === true ? (metafield?.updatedAt || null) : null;
         
         const pdVal = node.preferredDeliveryMetafield?.value?.toLowerCase?.() || '';
         let preferredDelivery = null;
@@ -110,6 +115,7 @@ export default async function handler(req, res) {
           approved_at: approvedAt,
           preferred_delivery: preferredDelivery,
           preferred_delivery_date: node.preferredDeliveryDateMetafield?.value || null,
+          prescription_status: node.prescriptionStatusMetafield?.value || null,
           customer: {
             first_name: node.customer?.firstName,
             last_name: node.customer?.lastName,
@@ -122,9 +128,14 @@ export default async function handler(req, res) {
         };
       });
 
-    // Split into approved and not approved
-    const approvedOrders = filteredOrders.filter(o => o.approved_to_ship);
-    const notApprovedOrders = filteredOrders.filter(o => !o.approved_to_ship);
+    // Split into approved and not approved (explicitly false only, exclude blanks and on-hold)
+    const approvedOrders = filteredOrders.filter(o => o.approved_to_ship === true);
+    const notApprovedOrders = filteredOrders.filter(o => {
+      if (o.approved_to_ship !== false) return false;
+      const ps = o.prescription_status || '';
+      if (ps.toLowerCase().includes('on hold') || ps.toLowerCase().includes('on_hold')) return false;
+      return true;
+    });
 
     // Generate CSV content
     const generateCSV = (orders) => {
