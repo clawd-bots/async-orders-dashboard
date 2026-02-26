@@ -180,13 +180,7 @@ export default async function handler(req, res) {
       });
     
     const approvedOrders = filteredOrders.filter(o => o.approved_to_ship === true);
-    const notApprovedOrders = filteredOrders.filter(o => {
-      if (o.approved_to_ship !== false) return false;
-      // Exclude "On hold" prescription status — only show rejected/actionable
-      const ps = o.prescription_status || '';
-      if (ps.toLowerCase().includes('on hold') || ps.toLowerCase().includes('on_hold')) return false;
-      return true;
-    });
+    const notApprovedOrders = filteredOrders.filter(o => o.approved_to_ship === false);
 
     // Sort by created_at descending (newest first)
     approvedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
