@@ -334,7 +334,10 @@ function App() {
                 </div>
               )}
             </div>
-            <div style={{ fontSize: 11, color: C.gray, marginBottom: 16 }}>Average hours from approval to fulfillment · Target: 24h</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <div style={{ fontSize: 11, color: C.gray }}>Average hours from approval to fulfillment</div>
+            </div>
+            <div style={{ fontSize: 11, color: C.gray, marginBottom: 16 }}>Target: 24h</div>
             {shipTimeData.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={shipTimeData}>
@@ -368,7 +371,9 @@ function App() {
                 </div>
               )}
             </div>
-            <div style={{ fontSize: 11, color: C.gray, marginBottom: 16 }}>Provincial vs Metro · Excludes Sundays</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: C.gray }}>Provincial vs Metro · Excludes Sundays</div>
+            </div>
             {fulfilledData.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={fulfilledData}>
