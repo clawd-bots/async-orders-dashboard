@@ -152,6 +152,9 @@ function App() {
 
     if (phtDay === 0) return { dueToday: 0, overdue: 0, total: 0 };
 
+    // Today's date for comparison (YYYY-MM-DD in PHT)
+    const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
+
     // Yesterday's cutoffs in PHT
     const yesterday12NN = new Date(phtNow);
     yesterday12NN.setDate(yesterday12NN.getDate() - 1);
@@ -167,26 +170,44 @@ function App() {
     const today3PM = new Date(phtNow);
     today3PM.setHours(15, 0, 0, 0);
 
-    const eligible = approvedOrders.filter(o => !o.preferred_delivery_date);
+    // Handle ALL approved orders now (not just those without delivery dates)
+    const eligible = approvedOrders;
 
     let dueToday = 0;
     let overdue = 0;
 
     for (const o of eligible) {
-      const ref = o.approved_at || o.created_at;
-      const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
-      const isProvincial = o.is_provincial === true;
-      const yesterdayCutoff = isProvincial ? yesterday12NN : yesterday3PM;
-      const todayCutoff = isProvincial ? today12NN : today3PM;
+      if (o.preferred_delivery_date) {
+        // Orders WITH delivery date: compare delivery date to today
+        const deliveryDate = new Date(o.preferred_delivery_date + 'T00:00:00');
+        const deliveryDatePHT = new Date(deliveryDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+        const deliveryDateOnly = new Date(deliveryDatePHT.getFullYear(), deliveryDatePHT.getMonth(), deliveryDatePHT.getDate());
+        
+        if (deliveryDateOnly < todayPHT) {
+          // Delivery date is in the past → overdue
+          overdue++;
+        } else if (deliveryDateOnly.getTime() === todayPHT.getTime()) {
+          // Delivery date is today → due today
+          dueToday++;
+        }
+        // If delivery date > today → neither (scheduled/future)
+      } else {
+        // Orders WITHOUT delivery date: use existing cutoff logic
+        const ref = o.approved_at || o.created_at;
+        const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+        const isProvincial = o.is_provincial === true;
+        const yesterdayCutoff = isProvincial ? yesterday12NN : yesterday3PM;
+        const todayCutoff = isProvincial ? today12NN : today3PM;
 
-      if (approvedPHT < yesterdayCutoff) {
-        // Approved before yesterday's cutoff — should have shipped yesterday — overdue
-        overdue++;
-      } else if (approvedPHT < todayCutoff) {
-        // Approved between yesterday's cutoff and today's cutoff — due today
-        dueToday++;
+        if (approvedPHT < yesterdayCutoff) {
+          // Approved before yesterday's cutoff — should have shipped yesterday — overdue
+          overdue++;
+        } else if (approvedPHT < todayCutoff) {
+          // Approved between yesterday's cutoff and today's cutoff — due today
+          dueToday++;
+        }
+        // Approved today after cutoff — due tomorrow, not counted
       }
-      // Approved today after cutoff — due tomorrow, not counted
     }
 
     return { dueToday, overdue, total: dueToday + overdue };
@@ -205,17 +226,28 @@ function App() {
       })
     : rawOrders;
 
-  // Overdue: approved before yesterday's cutoff (12NN prov / 3PM metro), no delivery date
+  // Overdue: approved before yesterday's cutoff (12NN prov / 3PM metro) OR delivery date before today
   const isOverdue = (o) => {
-    if (o.preferred_delivery_date) return false;
-    const ref = o.approved_at || o.created_at;
     const phtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
-    const isProvincial = o.is_provincial === true;
-    const yesterdayCutoff = new Date(phtNow);
-    yesterdayCutoff.setDate(yesterdayCutoff.getDate() - 1);
-    yesterdayCutoff.setHours(isProvincial ? 12 : 15, 0, 0, 0);
-    const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
-    return approvedPHT < yesterdayCutoff;
+    const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
+    
+    if (o.preferred_delivery_date) {
+      // Orders WITH delivery date: check if delivery date is before today
+      const deliveryDate = new Date(o.preferred_delivery_date + 'T00:00:00');
+      const deliveryDatePHT = new Date(deliveryDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+      const deliveryDateOnly = new Date(deliveryDatePHT.getFullYear(), deliveryDatePHT.getMonth(), deliveryDatePHT.getDate());
+      
+      return deliveryDateOnly < todayPHT;
+    } else {
+      // Orders WITHOUT delivery date: use existing cutoff logic
+      const ref = o.approved_at || o.created_at;
+      const isProvincial = o.is_provincial === true;
+      const yesterdayCutoff = new Date(phtNow);
+      yesterdayCutoff.setDate(yesterdayCutoff.getDate() - 1);
+      yesterdayCutoff.setHours(isProvincial ? 12 : 15, 0, 0, 0);
+      const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+      return approvedPHT < yesterdayCutoff;
+    }
   };
 
   // Apply filters (approved tab only)
@@ -229,7 +261,20 @@ function App() {
     : sortedOrders;
 
   // Filter counts for badges
-  const withDateCount = approvedOrders.filter(o => o.preferred_delivery_date).length;
+  const phtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+  const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
+  
+  const withDateCount = approvedOrders.filter(o => {
+    if (!o.preferred_delivery_date) return false;
+    
+    // Only count orders with FUTURE delivery dates (not today, not past)
+    const deliveryDate = new Date(o.preferred_delivery_date + 'T00:00:00');
+    const deliveryDatePHT = new Date(deliveryDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+    const deliveryDateOnly = new Date(deliveryDatePHT.getFullYear(), deliveryDatePHT.getMonth(), deliveryDatePHT.getDate());
+    
+    return deliveryDateOnly > todayPHT;
+  }).length;
+  const allWithDateCount = approvedOrders.filter(o => o.preferred_delivery_date).length;
   const withoutDateCount = approvedOrders.filter(o => !o.preferred_delivery_date).length;
   const overdueCount = approvedOrders.filter(o => isOverdue(o)).length;
 
@@ -477,7 +522,7 @@ function App() {
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {[
                   { key: 'all', label: 'All', count: approvedOrders.length },
-                  { key: 'with_date', label: 'With Delivery Date', count: withDateCount },
+                  { key: 'with_date', label: 'With Delivery Date', count: allWithDateCount },
                   { key: 'without_date', label: 'No Delivery Date', count: withoutDateCount },
                   { key: 'overdue', label: 'Overdue', count: overdueCount },
                 ].map(f => (
