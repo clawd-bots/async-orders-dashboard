@@ -143,9 +143,8 @@ function App() {
     return `${days}d ${remHrs}h`;
   };
 
-  // Due today: approved today or yesterday (D-1), no delivery date, by cutoff time
-  // Metro orders cutoff = 3PM, Provincial orders cutoff = 12NN (noon)
-  // Overdue: approved D-2 or earlier (e.g. if today is Feb 26, approved Feb 24 or before = overdue)
+  // Overdue: approved before yesterday's cutoff (12NN prov / 3PM metro) and still unfulfilled
+  // Due Today: approved yesterday after cutoff (carried over) or approved today before cutoff
   const getDueTodayCounts = () => {
     const now = new Date();
     const phtNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
@@ -153,12 +152,16 @@ function App() {
 
     if (phtDay === 0) return { dueToday: 0, overdue: 0, total: 0 };
 
-    // Start of yesterday (D-1) in PHT
-    const yesterdayStart = new Date(phtNow);
-    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-    yesterdayStart.setHours(0, 0, 0, 0);
+    // Yesterday's cutoffs in PHT
+    const yesterday12NN = new Date(phtNow);
+    yesterday12NN.setDate(yesterday12NN.getDate() - 1);
+    yesterday12NN.setHours(12, 0, 0, 0);
 
-    // Today cutoffs: 12NN for Provincial, 3PM for Metro
+    const yesterday3PM = new Date(phtNow);
+    yesterday3PM.setDate(yesterday3PM.getDate() - 1);
+    yesterday3PM.setHours(15, 0, 0, 0);
+
+    // Today's cutoffs in PHT
     const today12NN = new Date(phtNow);
     today12NN.setHours(12, 0, 0, 0);
     const today3PM = new Date(phtNow);
@@ -173,13 +176,14 @@ function App() {
       const ref = o.approved_at || o.created_at;
       const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
       const isProvincial = o.is_provincial === true;
-      const cutoff = isProvincial ? today12NN : today3PM;
+      const yesterdayCutoff = isProvincial ? yesterday12NN : yesterday3PM;
+      const todayCutoff = isProvincial ? today12NN : today3PM;
 
-      if (approvedPHT < yesterdayStart) {
-        // Approved before D-1 — overdue
+      if (approvedPHT < yesterdayCutoff) {
+        // Approved before yesterday's cutoff — should have shipped yesterday — overdue
         overdue++;
-      } else if (phtNow < cutoff || approvedPHT < cutoff) {
-        // Approved D-1 or today before cutoff — due today
+      } else if (approvedPHT < todayCutoff) {
+        // Approved between yesterday's cutoff and today's cutoff — due today
         dueToday++;
       }
       // Approved today after cutoff — due tomorrow, not counted
@@ -201,16 +205,17 @@ function App() {
       })
     : rawOrders;
 
-  // Determine overdue orders (approved D-2 or earlier, no delivery date)
+  // Overdue: approved before yesterday's cutoff (12NN prov / 3PM metro), no delivery date
   const isOverdue = (o) => {
     if (o.preferred_delivery_date) return false;
     const ref = o.approved_at || o.created_at;
     const phtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
-    const yesterdayStart = new Date(phtNow);
-    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
-    yesterdayStart.setHours(0, 0, 0, 0);
+    const isProvincial = o.is_provincial === true;
+    const yesterdayCutoff = new Date(phtNow);
+    yesterdayCutoff.setDate(yesterdayCutoff.getDate() - 1);
+    yesterdayCutoff.setHours(isProvincial ? 12 : 15, 0, 0, 0);
     const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
-    return approvedPHT < yesterdayStart;
+    return approvedPHT < yesterdayCutoff;
   };
 
   // Apply filters (approved tab only)
