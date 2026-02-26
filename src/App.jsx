@@ -143,7 +143,8 @@ function App() {
     return `${days}d ${remHrs}h`;
   };
 
-  // Due today: approved today or yesterday (D-1), no delivery date, by 3PM cutoff
+  // Due today: approved today or yesterday (D-1), no delivery date, by cutoff time
+  // Metro orders cutoff = 3PM, Provincial orders cutoff = 12NN (noon)
   // Overdue: approved D-2 or earlier (e.g. if today is Feb 26, approved Feb 24 or before = overdue)
   const getDueTodayCounts = () => {
     const now = new Date();
@@ -157,7 +158,9 @@ function App() {
     yesterdayStart.setDate(yesterdayStart.getDate() - 1);
     yesterdayStart.setHours(0, 0, 0, 0);
 
-    // Today 3PM cutoff
+    // Today cutoffs: 12NN for Provincial, 3PM for Metro
+    const today12NN = new Date(phtNow);
+    today12NN.setHours(12, 0, 0, 0);
     const today3PM = new Date(phtNow);
     today3PM.setHours(15, 0, 0, 0);
 
@@ -169,15 +172,17 @@ function App() {
     for (const o of eligible) {
       const ref = o.approved_at || o.created_at;
       const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+      const isProvincial = o.is_provincial === true;
+      const cutoff = isProvincial ? today12NN : today3PM;
 
       if (approvedPHT < yesterdayStart) {
         // Approved before D-1 — overdue
         overdue++;
-      } else if (phtNow < today3PM || approvedPHT < today3PM) {
-        // Approved D-1 or today before 3PM — due today
+      } else if (phtNow < cutoff || approvedPHT < cutoff) {
+        // Approved D-1 or today before cutoff — due today
         dueToday++;
       }
-      // Approved today after 3PM — due tomorrow, not counted
+      // Approved today after cutoff — due tomorrow, not counted
     }
 
     return { dueToday, overdue, total: dueToday + overdue };
@@ -226,6 +231,19 @@ function App() {
   // Prepare chart data (filter out Sundays for ship time)
   const shipTimeData = metrics?.days?.filter(d => !d.isSunday && d.avgShipTimeHours !== null) || [];
   const fulfilledData = metrics?.days?.filter(d => !d.isSunday) || [];
+
+  // Calculate monthly averages
+  const avgShipTime = shipTimeData.length > 0 
+    ? shipTimeData.reduce((sum, d) => sum + d.avgShipTimeHours, 0) / shipTimeData.length 
+    : 0;
+  
+  const avgMetroPerDay = fulfilledData.length > 0
+    ? fulfilledData.reduce((sum, d) => sum + (d.metro || 0), 0) / fulfilledData.length
+    : 0;
+  
+  const avgProvincialPerDay = fulfilledData.length > 0
+    ? fulfilledData.reduce((sum, d) => sum + (d.provincial || 0), 0) / fulfilledData.length
+    : 0;
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: "'DM Sans', sans-serif" }}>
@@ -300,9 +318,9 @@ function App() {
 
         {/* Charts Row */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
-          {/* Approved to Ship Time (MTD) */}
+          {/* Approved to Ship Time */}
           <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: C.dark, marginBottom: 4 }}>Approved to Ship Time (MTD)</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: C.dark, marginBottom: 4 }}>Approved to Ship Time</div>
             <div style={{ fontSize: 11, color: C.gray, marginBottom: 16 }}>Average hours from approval to fulfillment · Target: 24h</div>
             {shipTimeData.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
@@ -316,6 +334,7 @@ function App() {
                     labelFormatter={(v) => v}
                   />
                   <ReferenceLine y={24} stroke={C.green} strokeDasharray="5 5" label={{ value: '24h target', fontSize: 10, fill: C.green, position: 'right' }} />
+                  <ReferenceLine y={avgShipTime} stroke={C.blue} strokeDasharray="3 3" label={{ value: `${avgShipTime.toFixed(1)}h avg`, fontSize: 10, fill: C.blue, position: 'left' }} />
                   <Line type="monotone" dataKey="avgShipTimeHours" stroke={C.accent} strokeWidth={2} dot={{ r: 3, fill: C.accent }} name="Avg Hours" />
                 </LineChart>
               </ResponsiveContainer>
@@ -328,8 +347,8 @@ function App() {
 
           {/* Orders Fulfilled Per Day (MTD) */}
           <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: C.dark, marginBottom: 4 }}>Orders Fulfilled Per Day (MTD)</div>
-            <div style={{ fontSize: 11, color: C.gray, marginBottom: 16 }}>Provincial vs Metro · Excludes Sundays</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: C.dark, marginBottom: 4 }}>Orders Fulfilled Per Day</div>
+            <div style={{ fontSize: 11, color: C.gray, marginBottom: 16 }}>Provincial vs Metro · Excludes Sundays · Avg: {avgMetroPerDay.toFixed(0)} metro / {avgProvincialPerDay.toFixed(0)} provincial per day</div>
             {fulfilledData.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={fulfilledData}>
