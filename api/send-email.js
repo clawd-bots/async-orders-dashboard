@@ -199,7 +199,7 @@ export default async function handler(req, res) {
     // Send via AgentMail - using inboxes/messages endpoint for attachment support
     let emailRes;
     try {
-      emailRes = await fetch('https://api.agentmail.to/v0/inboxes/edwin@mail.andyou.ph/messages', {
+      emailRes = await fetch('https://api.agentmail.to/v0/inboxes/edwin@mail.andyou.ph/messages/send', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${agentmailKey}`,
