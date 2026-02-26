@@ -1,131 +1,245 @@
-// Send email with async orders to Wesley
-// Uses AgentMail API (edwin@mail.andyou.ph)
-
+// Send daily fulfillment report email with CSV attachments
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
   const storeUrl = process.env.SHOPIFY_STORE_URL;
   const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
-  const agentmailApiKey = process.env.AGENTMAIL_API_KEY;
-  
+  const agentmailKey = process.env.AGENTMAIL_API_KEY;
+
   if (!storeUrl || !accessToken) {
-    return res.status(400).json({ 
-      error: 'Shopify API not configured' 
-    });
+    return res.status(400).json({ error: 'Shopify API not configured' });
   }
 
-  if (!agentmailApiKey) {
-    return res.status(400).json({ 
-      error: 'AgentMail API key not configured' 
-    });
+  if (!agentmailKey) {
+    return res.status(400).json({ error: 'AgentMail API not configured' });
   }
 
   try {
-    // Fetch async orders (today's orders or last 24h)
-    const oneDayAgo = new Date();
-    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+    // Use GraphQL to fetch orders
+    const graphqlUrl = `https://${storeUrl}/admin/api/2024-01/graphql.json`;
     
-    const url = `https://${storeUrl}/admin/api/2024-01/orders.json?status=any&created_at_min=${oneDayAgo.toISOString()}&limit=250`;
-    
-    const shopifyRes = await fetch(url, {
+    const query = `
+      {
+        orders(first: 250, sortKey: CREATED_AT, reverse: true, query: "fulfillment_status:unfulfilled financial_status:paid") {
+          edges {
+            node {
+              id
+              name
+              createdAt
+              totalPriceSet {
+                shopMoney {
+                  amount
+                  currencyCode
+                }
+              }
+              customer {
+                firstName
+                lastName
+                email
+              }
+              lineItems(first: 10) {
+                edges {
+                  node {
+                    title
+                    quantity
+                  }
+                }
+              }
+              metafield(namespace: "custom", key: "approved_to_ship") {
+                value
+                updatedAt
+              }
+              preferredDeliveryMetafield: metafield(namespace: "custom", key: "preferred_delivery") {
+                value
+              }
+              preferredDeliveryDateMetafield: metafield(namespace: "custom", key: "preferred_delivery_data") {
+                value
+              }
+              discountCodes
+            }
+          }
+        }
+      }
+    `;
+
+    const shopifyRes = await fetch(graphqlUrl, {
+      method: 'POST',
       headers: {
         'X-Shopify-Access-Token': accessToken,
         'Content-Type': 'application/json'
-      }
+      },
+      body: JSON.stringify({ query })
     });
 
     if (!shopifyRes.ok) {
-      return res.status(500).json({ error: 'Failed to fetch Shopify orders' });
+      throw new Error(`Shopify API error: ${shopifyRes.status}`);
     }
 
     const data = await shopifyRes.json();
     
-    // Filter for "async" tag
-    const asyncOrders = (data.orders || []).filter(order => {
-      const tags = (order.tags || '').toLowerCase().split(',').map(t => t.trim());
-      return tags.includes('async');
-    });
-
-    if (asyncOrders.length === 0) {
-      return res.json({ 
-        message: 'No async orders in the last 24 hours. No email sent.',
-        orderCount: 0 
-      });
+    if (data.errors) {
+      throw new Error(data.errors[0]?.message || 'GraphQL error');
     }
 
-    // Build HTML table
-    const tableRows = asyncOrders.map(order => {
-      const items = (order.line_items || [])
-        .map(i => `${i.quantity}× ${i.title}`)
-        .join('<br>');
-      return `
-        <tr>
-          <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${order.name}</td>
-          <td style="padding: 8px; border: 1px solid #ddd;">${items}</td>
-        </tr>
-      `;
-    }).join('');
-
-    const htmlBody = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px;">
-        <h2 style="color: #AF6E4C;">Async Orders Report</h2>
-        <p>Here are the orders tagged "async" from the last 24 hours:</p>
-        
-        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-          <thead>
-            <tr style="background: #f5f5f5;">
-              <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Order #</th>
-              <th style="padding: 10px; border: 1px solid #ddd; text-align: left;">Items</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tableRows}
-          </tbody>
-        </table>
-        
-        <p style="color: #666; font-size: 14px;">
-          Total: ${asyncOrders.length} order(s)<br>
-          Generated: ${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}
-        </p>
-        
-        <p style="margin-top: 20px;">
-          <a href="https://shopify-async-orders.vercel.app" style="color: #AF6E4C;">View Dashboard →</a>
-        </p>
-      </div>
-    `;
-
-    const textBody = `Async Orders Report\n\n` +
-      asyncOrders.map(o => 
-        `${o.name}: ${(o.line_items || []).map(i => `${i.quantity}× ${i.title}`).join(', ')}`
-      ).join('\n') +
-      `\n\nTotal: ${asyncOrders.length} order(s)`;
-
-    // Send via AgentMail API
-    const emailRes = await fetch('https://api.agentmail.to/v0/inboxes/edwin@mail.andyou.ph/threads', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${agentmailApiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        to: [{ email: 'wesley@andyou.ph' }],
-        subject: `[Async Orders] ${asyncOrders.length} order(s) - ${new Date().toLocaleDateString('en-PH')}`,
-        body_text: textBody,
-        body_html: htmlBody
+    // Process all orders, exclude Keevtest
+    const allOrders = data.data?.orders?.edges || [];
+    const filteredOrders = allOrders
+      .filter(edge => {
+        const discountCodes = edge.node.discountCodes || [];
+        const hasKeevtest = discountCodes.some(code => 
+          code?.toLowerCase?.().includes('keevtest')
+        );
+        return !hasKeevtest;
       })
+      .map(edge => {
+        const node = edge.node;
+        const metafield = node.metafield;
+        const val = metafield?.value?.toLowerCase?.() || '';
+        const approvedToShip = val === 'true' || val === '1' || val === 'yes';
+        const approvedAt = approvedToShip ? (metafield?.updatedAt || null) : null;
+        
+        const pdVal = node.preferredDeliveryMetafield?.value?.toLowerCase?.() || '';
+        let preferredDelivery = null;
+        if (pdVal === 'true' || pdVal === '1' || pdVal === 'yes') preferredDelivery = true;
+        else if (pdVal === 'false' || pdVal === '0' || pdVal === 'no') preferredDelivery = false;
+
+        return {
+          name: node.name,
+          created_at: node.createdAt,
+          total_price: node.totalPriceSet?.shopMoney?.amount,
+          currency: node.totalPriceSet?.shopMoney?.currencyCode,
+          approved_to_ship: approvedToShip,
+          approved_at: approvedAt,
+          preferred_delivery: preferredDelivery,
+          preferred_delivery_date: node.preferredDeliveryDateMetafield?.value || null,
+          customer: {
+            first_name: node.customer?.firstName,
+            last_name: node.customer?.lastName,
+            email: node.customer?.email
+          },
+          line_items: node.lineItems?.edges?.map(e => ({
+            title: e.node.title,
+            quantity: e.node.quantity
+          })) || []
+        };
+      });
+
+    // Split into approved and not approved
+    const approvedOrders = filteredOrders.filter(o => o.approved_to_ship);
+    const notApprovedOrders = filteredOrders.filter(o => !o.approved_to_ship);
+
+    // Generate CSV content
+    const generateCSV = (orders) => {
+      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Items', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Total'];
+      const rows = orders.map(o => [
+        o.name,
+        new Date(o.created_at).toLocaleDateString('en-PH'),
+        `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim() || 'Guest',
+        o.customer?.email || '',
+        o.line_items?.map(i => `${i.quantity}x ${i.title}`).join('; ') || '',
+        o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
+        o.preferred_delivery_date || '',
+        o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
+        `${o.currency} ${parseFloat(o.total_price || 0).toLocaleString()}`
+      ]);
+      
+      return [headers, ...rows]
+        .map(r => r.map(c => `"${(c || '').toString().replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+    };
+
+    const approvedCSV = generateCSV(approvedOrders);
+    const notApprovedCSV = generateCSV(notApprovedOrders);
+
+    // Date for filenames
+    const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const todayFormatted = new Date().toLocaleDateString('en-PH', { 
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
     });
 
+    // Calculate totals for approved
+    const approvedValue = approvedOrders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
+    const approvedItems = approvedOrders.reduce((sum, o) => 
+      sum + (o.line_items?.reduce((s, i) => s + i.quantity, 0) || 0), 0);
+
+    // Calculate totals for not approved  
+    const notApprovedValue = notApprovedOrders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
+    const notApprovedItems = notApprovedOrders.reduce((sum, o) => 
+      sum + (o.line_items?.reduce((s, i) => s + i.quantity, 0) || 0), 0);
+
+    // Count old orders (3+ days)
+    const oldApprovedOrders = approvedOrders.filter(o => {
+      const days = Math.floor((new Date() - new Date(o.created_at)) / (1000 * 60 * 60 * 24));
+      return days >= 3;
+    });
+
+    // Build friendly email message
+    let emailBody = `Hi team! 👋\n\n`;
+    emailBody += `Here's your daily fulfillment update for ${todayFormatted}.\n\n`;
+    
+    emailBody += `📦 **Ready to Ship (Approved)**\n`;
+    emailBody += `   ${approvedOrders.length} orders · PHP ${approvedValue.toLocaleString()} · ${approvedItems} items\n\n`;
+    
+    emailBody += `⏳ **Pending Approval**\n`;
+    emailBody += `   ${notApprovedOrders.length} orders · PHP ${notApprovedValue.toLocaleString()} · ${notApprovedItems} items\n\n`;
+
+    if (oldApprovedOrders.length > 0) {
+      emailBody += `⚠️ Heads up: ${oldApprovedOrders.length} approved order(s) are 3+ days old and need attention!\n\n`;
+    }
+
+    if (approvedOrders.length === 0) {
+      emailBody += `Great news — all approved orders have been fulfilled! 🎉\n\n`;
+    }
+
+    emailBody += `I've attached two CSV files with the full details:\n`;
+    emailBody += `• ATS_${dateStr}.csv — Approved orders ready to ship\n`;
+    emailBody += `• NOT_APPROVED_${dateStr}.csv — Orders pending approval\n\n`;
+    
+    emailBody += `Let me know if you need anything else!\n\n`;
+    emailBody += `— Edwin 🎩`;
+
+    // Send via AgentMail - using inboxes/messages endpoint for attachment support
+    let emailRes;
+    try {
+      emailRes = await fetch('https://api.agentmail.to/v0/inboxes/edwin@mail.andyou.ph/messages', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${agentmailKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          to: ['andrea@andyou.ph', 'karell@andyou.ph', 'raymund@andyou.ph', 'bryan_bumanglag@andyou.ph'],
+          cc: ['wesley@andyou.ph'],
+          subject: `📦 Daily Fulfillment Report — ${approvedOrders.length} ready to ship, ${notApprovedOrders.length} pending`,
+          text: emailBody,
+          attachments: [
+            {
+              filename: `ATS_${dateStr}.csv`,
+              content: btoa(unescape(encodeURIComponent(approvedCSV))),
+              content_type: 'text/csv'
+            },
+            {
+              filename: `NOT_APPROVED_${dateStr}.csv`,
+              content: btoa(unescape(encodeURIComponent(notApprovedCSV))),
+              content_type: 'text/csv'
+            }
+          ]
+        })
+      });
+    } catch (fetchErr) {
+      console.error('Fetch error:', fetchErr);
+      throw new Error(`Email API fetch failed: ${fetchErr.message}`);
+    }
+
     if (!emailRes.ok) {
-      const error = await emailRes.text();
-      console.error('AgentMail error:', error);
-      return res.status(500).json({ error: 'Failed to send email' });
+      const err = await emailRes.text();
+      console.error('Email API error response:', err);
+      throw new Error(`Email send failed (${emailRes.status}): ${err}`);
     }
 
     res.json({ 
-      message: `Email sent with ${asyncOrders.length} async order(s)`,
-      orderCount: asyncOrders.length 
+      success: true, 
+      message: `Email sent with 2 CSV attachments! ${approvedOrders.length} approved, ${notApprovedOrders.length} pending.`,
+      approved: approvedOrders.length,
+      notApproved: notApprovedOrders.length
     });
 
   } catch (error) {
