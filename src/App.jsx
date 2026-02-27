@@ -109,7 +109,7 @@ function App() {
         o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
         o.preferred_delivery_date || '',
         o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
-        getHoursAgo(o.approved_at || o.created_at),
+        getHoursAgo(getEffectiveApprovalDate(o)),
       ]);
     } else {
       headers = ['Order Number', 'Date', 'Customer', 'Email', 'Items', 'Prescription Status', 'Total'];
@@ -143,14 +143,13 @@ function App() {
     return `${days}d ${remHrs}h`;
   };
 
-  // Overdue: approved before yesterday's cutoff (12NN prov / 3PM metro) and still unfulfilled
-  // Due Today: approved yesterday after cutoff (carried over) or approved today before cutoff
-  const getDueTodayCounts = () => {
+  // New tile structure logic
+  const getTileCounts = () => {
     const now = new Date();
     const phtNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
     const phtDay = phtNow.getDay(); // 0=Sun
 
-    if (phtDay === 0) return { dueToday: 0, overdue: 0, total: 0 };
+    if (phtDay === 0) return { shipToday: 0, overdue: 0, scheduled: 0, newOrders: 0, pending: 0 };
 
     // Today's date for comparison (YYYY-MM-DD in PHT)
     const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
@@ -170,52 +169,77 @@ function App() {
     const today3PM = new Date(phtNow);
     today3PM.setHours(15, 0, 0, 0);
 
-    // Handle ALL approved orders now (not just those without delivery dates)
-    const eligible = approvedOrders;
-
-    let dueToday = 0;
+    let shipToday = 0;
     let overdue = 0;
+    let scheduled = 0;
+    let newOrders = 0;
 
-    for (const o of eligible) {
+    for (const o of approvedOrders) {
       if (o.preferred_delivery_date) {
-        // Orders WITH delivery date: compare delivery date to today
+        // Orders WITH delivery date
         const deliveryDate = new Date(o.preferred_delivery_date + 'T00:00:00');
         const deliveryDatePHT = new Date(deliveryDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
         const deliveryDateOnly = new Date(deliveryDatePHT.getFullYear(), deliveryDatePHT.getMonth(), deliveryDatePHT.getDate());
         
         if (deliveryDateOnly < todayPHT) {
-          // Delivery date is in the past → overdue
+          // Delivery date is past → overdue (part of Ship Today)
           overdue++;
+          shipToday++;
         } else if (deliveryDateOnly.getTime() === todayPHT.getTime()) {
-          // Delivery date is today → due today
-          dueToday++;
+          // Delivery date is today → check if past cutoff
+          const isProvincial = o.is_provincial === true;
+          const todayCutoff = isProvincial ? today12NN : today3PM;
+          
+          if (phtNow > todayCutoff) {
+            // Past today's cutoff with today's delivery date → overdue
+            overdue++;
+          }
+          shipToday++; // Always part of Ship Today if delivery date is today
+        } else {
+          // Delivery date is future → scheduled
+          scheduled++;
         }
-        // If delivery date > today → neither (scheduled/future)
       } else {
-        // Orders WITHOUT delivery date: use existing cutoff logic
-        const ref = o.approved_at || o.created_at;
+        // Orders WITHOUT delivery date: use cutoff logic
+        const ref = getEffectiveApprovalDate(o);
         const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
         const isProvincial = o.is_provincial === true;
         const yesterdayCutoff = isProvincial ? yesterday12NN : yesterday3PM;
         const todayCutoff = isProvincial ? today12NN : today3PM;
 
         if (approvedPHT < yesterdayCutoff) {
-          // Approved before yesterday's cutoff — should have shipped yesterday — overdue
+          // Approved before yesterday's cutoff → overdue (part of Ship Today)
           overdue++;
+          shipToday++;
         } else if (approvedPHT < todayCutoff) {
-          // Approved between yesterday's cutoff and today's cutoff — due today
-          dueToday++;
+          // Approved between yesterday's cutoff and today's cutoff → Ship Today
+          shipToday++;
+        } else {
+          // Approved after today's cutoff → new (due tomorrow)
+          newOrders++;
         }
-        // Approved today after cutoff — due tomorrow, not counted
       }
     }
 
-    return { dueToday, overdue, total: dueToday + overdue };
+    const pending = shipToday + scheduled + newOrders;
+    return { shipToday, overdue, scheduled, newOrders, pending };
+  };
+
+  // Helper function to get the effective approval date (later of approved_at vs created_at)
+  const getEffectiveApprovalDate = (order) => {
+    const approvedAt = order.approved_at ? new Date(order.approved_at) : null;
+    const createdAt = new Date(order.created_at);
+    
+    // Use the LATER of approval date vs payment date (created_at approximates payment time)
+    if (approvedAt && approvedAt > createdAt) {
+      return order.approved_at;
+    }
+    return order.created_at;
   };
 
   const rawOrders = activeTab === 'approved' ? approvedOrders : notApprovedOrders;
   const summary = activeTab === 'approved' ? approvedSummary : notApprovedSummary;
-  const dueCounts = getDueTodayCounts();
+  const tileCounts = getTileCounts();
 
   // Sort approved orders by approved_at descending (most recent first)
   const sortedOrders = activeTab === 'approved'
@@ -232,15 +256,24 @@ function App() {
     const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
     
     if (o.preferred_delivery_date) {
-      // Orders WITH delivery date: check if delivery date is before today
+      // Orders WITH delivery date: check if delivery date is before today OR today but past cutoff
       const deliveryDate = new Date(o.preferred_delivery_date + 'T00:00:00');
       const deliveryDatePHT = new Date(deliveryDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
       const deliveryDateOnly = new Date(deliveryDatePHT.getFullYear(), deliveryDatePHT.getMonth(), deliveryDatePHT.getDate());
       
-      return deliveryDateOnly < todayPHT;
+      if (deliveryDateOnly < todayPHT) {
+        return true; // Past delivery date
+      } else if (deliveryDateOnly.getTime() === todayPHT.getTime()) {
+        // Delivery date is today - check if past cutoff
+        const isProvincial = o.is_provincial === true;
+        const todayCutoff = new Date(phtNow);
+        todayCutoff.setHours(isProvincial ? 12 : 15, 0, 0, 0);
+        return phtNow > todayCutoff;
+      }
+      return false;
     } else {
       // Orders WITHOUT delivery date: use existing cutoff logic
-      const ref = o.approved_at || o.created_at;
+      const ref = getEffectiveApprovalDate(o);
       const isProvincial = o.is_provincial === true;
       const yesterdayCutoff = new Date(phtNow);
       yesterdayCutoff.setDate(yesterdayCutoff.getDate() - 1);
@@ -264,16 +297,6 @@ function App() {
   const phtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
   const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
   
-  const withDateCount = approvedOrders.filter(o => {
-    if (!o.preferred_delivery_date) return false;
-    
-    // Only count orders with FUTURE delivery dates (not today, not past)
-    const deliveryDate = new Date(o.preferred_delivery_date + 'T00:00:00');
-    const deliveryDatePHT = new Date(deliveryDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
-    const deliveryDateOnly = new Date(deliveryDatePHT.getFullYear(), deliveryDatePHT.getMonth(), deliveryDatePHT.getDate());
-    
-    return deliveryDateOnly > todayPHT;
-  }).length;
   const allWithDateCount = approvedOrders.filter(o => o.preferred_delivery_date).length;
   const withoutDateCount = approvedOrders.filter(o => !o.preferred_delivery_date).length;
   const overdueCount = approvedOrders.filter(o => isOverdue(o)).length;
@@ -340,28 +363,45 @@ function App() {
         {summary && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
             <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
-              <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>Pending Orders</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: summary.count > 0 ? C.yellow : C.green }}>
-                {summary.count}
+              <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>Ship Today</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: tileCounts.shipToday > 0 ? C.accent : C.green, marginBottom: 2 }}>
+                {tileCounts.shipToday}
               </div>
-            </div>
-            <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
-              <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>Due Today</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: dueCounts.dueToday > 0 ? C.accent : C.green }}>
-                {dueCounts.dueToday}
-              </div>
+              <div style={{ fontSize: 10, color: C.gray }}>Must go out today</div>
             </div>
             <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
               <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>Overdue</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: dueCounts.overdue > 0 ? C.red : C.green }}>
-                {dueCounts.overdue}
+              <div style={{ fontSize: 24, fontWeight: 700, color: tileCounts.overdue > 0 ? C.red : C.green, marginBottom: 2 }}>
+                {tileCounts.overdue}
               </div>
+              <div style={{ fontSize: 10, color: C.gray }}>Missed their window</div>
             </div>
             <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
-              <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>Scheduled Delivery</div>
-              <div style={{ fontSize: 32, fontWeight: 700, color: withDateCount > 0 ? C.blue : C.green }}>
-                {withDateCount}
+              <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>Scheduled</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: tileCounts.scheduled > 0 ? C.blue : C.green, marginBottom: 2 }}>
+                {tileCounts.scheduled}
               </div>
+              <div style={{ fontSize: 10, color: C.gray }}>Future delivery dates</div>
+            </div>
+            <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
+              <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>New</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: tileCounts.newOrders > 0 ? C.yellow : C.green, marginBottom: 2 }}>
+                {tileCounts.newOrders}
+              </div>
+              <div style={{ fontSize: 10, color: C.gray }}>Approved after today's cutoff</div>
+            </div>
+          </div>
+        )}
+        
+        {/* Pending Total */}
+        {summary && tileCounts.pending > 0 && (
+          <div style={{ 
+            background: '#fff', borderRadius: 12, padding: 16, marginBottom: 20, 
+            border: `1px solid ${C.beige}`, textAlign: 'center' 
+          }}>
+            <div style={{ fontSize: 14, color: C.gray }}>
+              Total Pending: <span style={{ fontWeight: 700, color: C.dark, fontSize: 16 }}>{tileCounts.pending}</span>
+              <span style={{ color: C.gray, marginLeft: 8 }}>({tileCounts.shipToday} Ship Today + {tileCounts.scheduled} Scheduled + {tileCounts.newOrders} New)</span>
             </div>
           </div>
         )}
@@ -577,7 +617,7 @@ function App() {
                 </thead>
                 <tbody>
                   {orders.map((order, i) => {
-                    const waitRef = order.approved_at || order.created_at;
+                    const waitRef = getEffectiveApprovalDate(order);
                     const waitHrs = (new Date() - new Date(waitRef)) / (1000 * 60 * 60);
                     const waitColor = waitHrs > 72 ? C.red : waitHrs > 24 ? C.yellow : C.gray;
                     const addr = order.shipping_address;

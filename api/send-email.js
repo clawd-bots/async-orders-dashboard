@@ -40,6 +40,7 @@ export default async function handler(req, res) {
                   node {
                     title
                     quantity
+                    sku
                   }
                 }
               }
@@ -123,7 +124,8 @@ export default async function handler(req, res) {
           },
           line_items: node.lineItems?.edges?.map(e => ({
             title: e.node.title,
-            quantity: e.node.quantity
+            quantity: e.node.quantity,
+            sku: e.node.sku || ''
           })) || []
         };
       });
@@ -139,13 +141,14 @@ export default async function handler(req, res) {
 
     // Generate CSV content
     const generateCSV = (orders) => {
-      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Items', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Total'];
+      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Items', 'SKUs', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Total'];
       const rows = orders.map(o => [
         o.name,
         new Date(o.created_at).toLocaleDateString('en-PH'),
         `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim() || 'Guest',
         o.customer?.email || '',
         o.line_items?.map(i => `${i.quantity}x ${i.title}`).join('; ') || '',
+        o.line_items?.map(i => i.sku).filter(Boolean).join('; ') || '',
         o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
         o.preferred_delivery_date || '',
         o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
@@ -176,10 +179,10 @@ export default async function handler(req, res) {
     const notApprovedItems = notApprovedOrders.reduce((sum, o) => 
       sum + (o.line_items?.reduce((s, i) => s + i.quantity, 0) || 0), 0);
 
-    // Count old orders (3+ days)
+    // Count old orders (3+ days) that DON'T have a scheduled delivery date
     const oldApprovedOrders = approvedOrders.filter(o => {
       const days = Math.floor((new Date() - new Date(o.created_at)) / (1000 * 60 * 60 * 24));
-      return days >= 3;
+      return days >= 3 && !o.preferred_delivery_date;
     });
 
     // Build friendly email message

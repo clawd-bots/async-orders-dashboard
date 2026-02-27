@@ -58,6 +58,7 @@ export default async function handler(req, res) {
                     node {
                       title
                       quantity
+                      sku
                     }
                   }
                 }
@@ -174,7 +175,8 @@ export default async function handler(req, res) {
           } : null,
           line_items: node.lineItems?.edges?.map(e => ({
             title: e.node.title,
-            quantity: e.node.quantity
+            quantity: e.node.quantity,
+            sku: e.node.sku || ''
           })) || []
         };
       });
