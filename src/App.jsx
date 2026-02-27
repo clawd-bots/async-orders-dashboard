@@ -97,13 +97,14 @@ function App() {
 
     let headers, rows;
     if (activeTab === 'approved') {
-      headers = ['Order Number', 'Date', 'Customer', 'Phone', 'Items', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Since Approval'];
+      headers = ['Order Number', 'Date', 'Customer', 'Phone', 'Items', 'SKUs', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Since Approval'];
       rows = orders.map(o => [
         o.name,
         new Date(o.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' }),
         `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim(),
         o.shipping_address?.phone || '',
         o.line_items?.map(i => `${i.quantity}x ${i.title}`).join('; '),
+        o.line_items?.map(i => i.sku).filter(Boolean).join('; ') || '',
         o.shipping_address ? `${o.shipping_address.address1}, ${o.shipping_address.city}, ${o.shipping_address.province} ${o.shipping_address.zip}` : '',
         o.is_provincial ? 'Yes' : 'No',
         o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
@@ -112,13 +113,14 @@ function App() {
         getHoursAgo(getEffectiveApprovalDate(o)),
       ]);
     } else {
-      headers = ['Order Number', 'Date', 'Customer', 'Email', 'Items', 'Prescription Status', 'Total'];
+      headers = ['Order Number', 'Date', 'Customer', 'Email', 'Items', 'SKUs', 'Prescription Status', 'Total'];
       rows = orders.map(o => [
         o.name,
         new Date(o.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' }),
         `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim(),
         o.customer?.email || '',
         o.line_items?.map(i => `${i.quantity}x ${i.title}`).join('; '),
+        o.line_items?.map(i => i.sku).filter(Boolean).join('; ') || '',
         o.prescription_status || '',
         `${o.currency} ${parseFloat(o.total_price || 0).toLocaleString()}`,
       ]);
