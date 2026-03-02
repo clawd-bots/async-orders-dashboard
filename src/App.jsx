@@ -176,8 +176,8 @@ function App() {
     const today3PM = new Date(phtNow);
     today3PM.setHours(15, 0, 0, 0);
 
-    let shipToday = 0;
-    let overdue = 0;
+    let shipToday = 0; // Orders due TODAY only (not overdue)
+    let overdue = 0;   // Orders that should have shipped on a PREVIOUS day
     let scheduled = 0;
     let newOrders = 0;
 
@@ -189,19 +189,11 @@ function App() {
         const deliveryDateOnly = new Date(deliveryDatePHT.getFullYear(), deliveryDatePHT.getMonth(), deliveryDatePHT.getDate());
         
         if (deliveryDateOnly < todayPHT) {
-          // Delivery date is past → overdue (part of Ship Today)
+          // Delivery date is past → overdue only (not Ship Today)
           overdue++;
-          shipToday++;
         } else if (deliveryDateOnly.getTime() === todayPHT.getTime()) {
-          // Delivery date is today → check if past cutoff
-          const isProvincial = o.is_provincial === true;
-          const todayCutoff = isProvincial ? today12NN : today3PM;
-          
-          if (phtNow > todayCutoff) {
-            // Past today's cutoff with today's delivery date → overdue
-            overdue++;
-          }
-          shipToday++; // Always part of Ship Today if delivery date is today
+          // Delivery date is today → Ship Today
+          shipToday++;
         } else {
           // Delivery date is future → scheduled
           scheduled++;
@@ -215,11 +207,10 @@ function App() {
         const todayCutoff = isProvincial ? today12NN : today3PM;
 
         if (approvedPHT < yesterdayCutoff) {
-          // Approved before yesterday's cutoff → overdue (part of Ship Today)
+          // Approved before previous business day's cutoff → overdue
           overdue++;
-          shipToday++;
         } else if (approvedPHT < todayCutoff) {
-          // Approved between yesterday's cutoff and today's cutoff → Ship Today
+          // Approved between previous biz day's cutoff and today's cutoff → Ship Today
           shipToday++;
         } else {
           // Approved after today's cutoff → new (due tomorrow)
@@ -228,7 +219,7 @@ function App() {
       }
     }
 
-    const pending = shipToday + scheduled + newOrders;
+    const pending = shipToday + overdue + scheduled + newOrders;
     return { shipToday, overdue, scheduled, newOrders, pending };
   };
 
