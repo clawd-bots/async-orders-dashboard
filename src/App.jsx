@@ -147,6 +147,18 @@ function App() {
   };
 
   // New tile structure logic
+  // Check if order was auto-approved (within 5 min of creation) AND has scheduled consultation
+  const isAwaitingConsultation = (o) => {
+    if (!o.consultation_status || o.consultation_status.toLowerCase() !== 'scheduled') return false;
+    // Only hold if approved within 5 minutes of order creation (auto-approval)
+    // If manually approved (>5 min), someone already reviewed it — ship normally
+    if (!o.approved_at || !o.created_at) return true; // no approval time = treat as auto
+    const created = new Date(o.created_at).getTime();
+    const approved = new Date(o.approved_at).getTime();
+    const diffMinutes = (approved - created) / (1000 * 60);
+    return diffMinutes <= 5;
+  };
+
   const getTileCounts = () => {
     const now = new Date();
     const phtNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
@@ -184,7 +196,7 @@ function App() {
 
     for (const o of approvedOrders) {
       // Orders with "Scheduled" consultation status are held — don't ship yet
-      if (o.consultation_status && o.consultation_status.toLowerCase() === 'scheduled') {
+      if (isAwaitingConsultation(o)) {
         awaitingConsult++;
         continue;
       }
@@ -233,11 +245,17 @@ function App() {
   // For orders that went through consultation: use consultation completion time
   // For others: later of approved_at vs created_at
   const getEffectiveApprovalDate = (order) => {
-    // If order had a consultation and it's no longer "Scheduled", the real approval
-    // is when the consultation completed (status changed from Scheduled)
+    // If order was auto-approved (within 5 min) and had a consultation that's now complete,
+    // the real approval is when the consultation completed
     const cs = order.consultation_status?.toLowerCase();
     if (order.consultation_status_updated_at && cs && cs !== 'scheduled' && cs !== 'not required') {
-      return order.consultation_status_updated_at;
+      // Only use consultation time if it was auto-approved (within 5 min)
+      const created = new Date(order.created_at).getTime();
+      const approved = order.approved_at ? new Date(order.approved_at).getTime() : created;
+      const diffMin = (approved - created) / (1000 * 60);
+      if (diffMin <= 5) {
+        return order.consultation_status_updated_at;
+      }
     }
     
     const approvedAt = order.approved_at ? new Date(order.approved_at) : null;
@@ -321,11 +339,11 @@ function App() {
   // Apply filters (approved tab only)
   const orders = activeTab === 'approved'
     ? sortedOrders.filter(o => {
-        const isAwaitingConsult = o.consultation_status && o.consultation_status.toLowerCase() === 'scheduled';
-        if (deliveryFilter === 'awaiting_consult') return isAwaitingConsult;
-        if (deliveryFilter === 'with_date') return !!o.preferred_delivery_date && !isDueToday(o) && !isAwaitingConsult;
-        if (deliveryFilter === 'due_today') return isDueToday(o) && !isAwaitingConsult;
-        if (deliveryFilter === 'overdue') return isOverdue(o) && !isAwaitingConsult;
+        const awaitingConsult = isAwaitingConsultation(o);
+        if (deliveryFilter === 'awaiting_consult') return awaitingConsult;
+        if (deliveryFilter === 'with_date') return !!o.preferred_delivery_date && !isDueToday(o) && !awaitingConsult;
+        if (deliveryFilter === 'due_today') return isDueToday(o) && !awaitingConsult;
+        if (deliveryFilter === 'overdue') return isOverdue(o) && !awaitingConsult;
         return true;
       })
     : sortedOrders;
@@ -334,8 +352,8 @@ function App() {
   const phtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
   const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
   
-  const awaitingConsultCount = approvedOrders.filter(o => o.consultation_status && o.consultation_status.toLowerCase() === 'scheduled').length;
-  const nonConsultOrders = approvedOrders.filter(o => !(o.consultation_status && o.consultation_status.toLowerCase() === 'scheduled'));
+  const awaitingConsultCount = approvedOrders.filter(o => isAwaitingConsultation(o)).length;
+  const nonConsultOrders = approvedOrders.filter(o => !isAwaitingConsultation(o));
   const allWithDateCount = nonConsultOrders.filter(o => o.preferred_delivery_date && !isDueToday(o)).length;
   const dueTodayCount = nonConsultOrders.filter(o => isDueToday(o)).length;
   const overdueCount = nonConsultOrders.filter(o => isOverdue(o)).length;
@@ -692,7 +710,7 @@ function App() {
                         <td style={tdStyle}>
                           <div style={{ fontWeight: 600, color: C.accent }}>{order.name}</div>
                           <div style={{ fontSize: 11, color: C.gray }}>{new Date(order.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })}</div>
-                          {order.consultation_status && order.consultation_status.toLowerCase() === 'scheduled' && (
+                          {isAwaitingConsultation(order) && (
                             <div style={{ fontSize: 10, color: '#9b59b6', fontWeight: 600, marginTop: 2 }}>⏳ Consult Scheduled</div>
                           )}
                         </td>
