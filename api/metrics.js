@@ -10,11 +10,14 @@ export default async function handler(req, res) {
   try {
     const graphqlUrl = `https://${storeUrl}/admin/api/2024-01/graphql.json`;
     
-    // Get first day of current month in PHT
+    // Get date 30 days ago in PHT
     const now = new Date();
     const phtOffset = 8 * 60 * 60 * 1000;
     const phtNow = new Date(now.getTime() + phtOffset);
-    const monthStart = new Date(Date.UTC(phtNow.getUTCFullYear(), phtNow.getUTCMonth(), 1) - phtOffset);
+    const thirtyDaysAgo = new Date(phtNow);
+    thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 30);
+    thirtyDaysAgo.setUTCHours(0, 0, 0, 0);
+    const monthStart = new Date(thirtyDaysAgo.getTime() - phtOffset);
     const monthStartISO = monthStart.toISOString();
 
     let allOrders = [];
@@ -120,9 +123,10 @@ export default async function handler(req, res) {
     }
 
     // Build daily arrays for graphs
-    // Generate all dates from month start to today
+    // Generate all dates from 30 days ago to today
     const days = [];
-    const startDate = new Date(Date.UTC(phtNow.getUTCFullYear(), phtNow.getUTCMonth(), 1));
+    const startDate = new Date(thirtyDaysAgo);
+    startDate.setUTCHours(0, 0, 0, 0);
     const endDate = new Date(Date.UTC(phtNow.getUTCFullYear(), phtNow.getUTCMonth(), phtNow.getUTCDate()));
     
     for (let d = new Date(startDate); d <= endDate; d.setUTCDate(d.getUTCDate() + 1)) {

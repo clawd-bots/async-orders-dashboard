@@ -315,7 +315,7 @@ function App() {
   const shipTimeData = metrics?.days?.filter(d => !d.isSunday && d.avgShipTimeHours !== null) || [];
   const fulfilledData = metrics?.days?.filter(d => !d.isSunday) || [];
 
-  // Calculate monthly averages
+  // Calculate 30-day averages
   const avgShipTime = shipTimeData.length > 0 
     ? shipTimeData.reduce((sum, d) => sum + d.avgShipTimeHours, 0) / shipTimeData.length 
     : 0;
@@ -425,7 +425,7 @@ function App() {
               {avgShipTime > 0 && (
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: 20, fontWeight: 700, color: C.dark }}>{avgShipTime.toFixed(1)}h</div>
-                  <div style={{ fontSize: 11, color: C.gray }}>↔ MTD</div>
+                  <div style={{ fontSize: 11, color: C.gray }}>↔ Last 30 days</div>
                 </div>
               )}
             </div>
