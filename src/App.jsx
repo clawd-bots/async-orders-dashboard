@@ -248,34 +248,26 @@ function App() {
       })
     : rawOrders;
 
-  // Overdue: approved before yesterday's cutoff (12NN prov / 3PM metro) OR delivery date before today
+  // Overdue: delivery date BEFORE today, OR no-date approved before previous biz day's cutoff
+  // Today's delivery date = Ship Today (NOT overdue) — matches tile logic
   const isOverdue = (o) => {
     const phtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+    const phtDay = phtNow.getDay();
+    if (phtDay === 0) return false; // No fulfillment on Sundays
+
     const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
     
     if (o.preferred_delivery_date) {
-      // Orders WITH delivery date: check if delivery date is before today OR today but past cutoff
+      // Only PAST delivery dates are overdue — today's date is Ship Today
       const deliveryDate = new Date(o.preferred_delivery_date + 'T00:00:00');
       const deliveryDatePHT = new Date(deliveryDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
       const deliveryDateOnly = new Date(deliveryDatePHT.getFullYear(), deliveryDatePHT.getMonth(), deliveryDatePHT.getDate());
-      
-      if (deliveryDateOnly < todayPHT) {
-        return true; // Past delivery date
-      } else if (deliveryDateOnly.getTime() === todayPHT.getTime()) {
-        // Delivery date is today - check if past cutoff
-        const isProvincial = o.is_provincial === true;
-        const todayCutoff = new Date(phtNow);
-        todayCutoff.setHours(isProvincial ? 12 : 15, 0, 0, 0);
-        return phtNow > todayCutoff;
-      }
-      return false;
+      return deliveryDateOnly < todayPHT;
     } else {
-      // Orders WITHOUT delivery date: use existing cutoff logic
+      // No delivery date: overdue if approved before previous biz day's cutoff
       const ref = getEffectiveApprovalDate(o);
       const isProvincial = o.is_provincial === true;
-      const phtDay = phtNow.getDay();
-      if (phtDay === 0) return false; // No fulfillment on Sundays — nothing is overdue
-      const prevBizDayOffset = phtDay === 1 ? 2 : 1; // Mon → Saturday cutoff, else yesterday
+      const prevBizDayOffset = phtDay === 1 ? 2 : 1;
       const yesterdayCutoff = new Date(phtNow);
       yesterdayCutoff.setDate(yesterdayCutoff.getDate() - prevBizDayOffset);
       yesterdayCutoff.setHours(isProvincial ? 12 : 15, 0, 0, 0);
