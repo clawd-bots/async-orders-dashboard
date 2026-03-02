@@ -28,7 +28,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('approved');
   const [metrics, setMetrics] = useState(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
-  const [deliveryFilter, setDeliveryFilter] = useState('all'); // 'all' | 'with_date' | 'without_date' | 'overdue'
+  const [deliveryFilter, setDeliveryFilter] = useState('all'); // 'all' | 'with_date' | 'due_today' | 'overdue'
 
   useEffect(() => {
     fetch('/api/status')
@@ -276,11 +276,38 @@ function App() {
     }
   };
 
+  // Due Today: delivery date is today OR no-date orders approved between prev biz day cutoff and today's cutoff
+  const isDueToday = (o) => {
+    const phtNow2 = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+    const phtDay2 = phtNow2.getDay();
+    if (phtDay2 === 0) return false;
+    const todayPHT2 = new Date(phtNow2.getFullYear(), phtNow2.getMonth(), phtNow2.getDate());
+
+    if (o.preferred_delivery_date) {
+      const dd = new Date(o.preferred_delivery_date + 'T00:00:00');
+      const ddPHT = new Date(dd.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+      const ddOnly = new Date(ddPHT.getFullYear(), ddPHT.getMonth(), ddPHT.getDate());
+      return ddOnly.getTime() === todayPHT2.getTime();
+    } else {
+      // No delivery date: due today if approved between prev biz day's cutoff and today's cutoff
+      const ref = getEffectiveApprovalDate(o);
+      const isProvincial = o.is_provincial === true;
+      const prevBizDayOffset = phtDay2 === 1 ? 2 : 1;
+      const yesterdayCutoff = new Date(phtNow2);
+      yesterdayCutoff.setDate(yesterdayCutoff.getDate() - prevBizDayOffset);
+      yesterdayCutoff.setHours(isProvincial ? 12 : 15, 0, 0, 0);
+      const todayCutoff = new Date(phtNow2);
+      todayCutoff.setHours(isProvincial ? 12 : 15, 0, 0, 0);
+      const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+      return approvedPHT >= yesterdayCutoff && approvedPHT < todayCutoff;
+    }
+  };
+
   // Apply filters (approved tab only)
   const orders = activeTab === 'approved'
     ? sortedOrders.filter(o => {
         if (deliveryFilter === 'with_date') return !!o.preferred_delivery_date;
-        if (deliveryFilter === 'without_date') return !o.preferred_delivery_date;
+        if (deliveryFilter === 'due_today') return isDueToday(o);
         if (deliveryFilter === 'overdue') return isOverdue(o);
         return true;
       })
@@ -291,7 +318,7 @@ function App() {
   const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
   
   const allWithDateCount = approvedOrders.filter(o => o.preferred_delivery_date).length;
-  const withoutDateCount = approvedOrders.filter(o => !o.preferred_delivery_date).length;
+  const dueTodayCount = approvedOrders.filter(o => isDueToday(o)).length;
   const overdueCount = approvedOrders.filter(o => isOverdue(o)).length;
 
   // Prepare chart data (filter out Sundays for ship time)
@@ -555,8 +582,8 @@ function App() {
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {[
                   { key: 'all', label: 'All', count: approvedOrders.length },
+                  { key: 'due_today', label: 'Due Today', count: dueTodayCount },
                   { key: 'with_date', label: 'With Delivery Date', count: allWithDateCount },
-                  { key: 'without_date', label: 'No Delivery Date', count: withoutDateCount },
                   { key: 'overdue', label: 'Overdue', count: overdueCount },
                 ].map(f => (
                   <button key={f.key} onClick={() => setDeliveryFilter(f.key)}
