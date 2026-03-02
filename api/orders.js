@@ -76,6 +76,9 @@ export default async function handler(req, res) {
                 prescriptionStatusMetafield: metafield(namespace: "custom", key: "prescription_status") {
                   value
                 }
+                consultationStatusMetafield: metafield(namespace: "custom", key: "consultation_status") {
+                  value
+                }
                 discountCodes
               }
             }
@@ -159,6 +162,14 @@ export default async function handler(req, res) {
           preferred_delivery: preferredDelivery,
           preferred_delivery_date: node.preferredDeliveryDateMetafield?.value || null,
           prescription_status: node.prescriptionStatusMetafield?.value || null,
+          consultation_status: (() => {
+            try {
+              const raw = node.consultationStatusMetafield?.value;
+              if (!raw) return null;
+              const parsed = JSON.parse(raw);
+              return Array.isArray(parsed) ? parsed[0] : parsed;
+            } catch { return node.consultationStatusMetafield?.value || null; }
+          })(),
           tags: node.tags || [],
           is_provincial: (node.tags || []).some(t => t.toLowerCase() === 'provincial'),
           customer: {

@@ -152,7 +152,7 @@ function App() {
     const phtNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
     const phtDay = phtNow.getDay(); // 0=Sun
 
-    if (phtDay === 0) return { shipToday: 0, overdue: 0, scheduled: 0, newOrders: 0, pending: 0 };
+    if (phtDay === 0) return { shipToday: 0, overdue: 0, scheduled: 0, newOrders: 0, awaitingConsult: 0, pending: 0 };
 
     // Today's date for comparison (YYYY-MM-DD in PHT)
     const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
@@ -180,8 +180,14 @@ function App() {
     let overdue = 0;   // Orders that should have shipped on a PREVIOUS day
     let scheduled = 0;
     let newOrders = 0;
+    let awaitingConsult = 0;
 
     for (const o of approvedOrders) {
+      // Orders with "Scheduled" consultation status are held — don't ship yet
+      if (o.consultation_status && o.consultation_status.toLowerCase() === 'scheduled') {
+        awaitingConsult++;
+        continue;
+      }
       if (o.preferred_delivery_date) {
         // Orders WITH delivery date
         const deliveryDate = new Date(o.preferred_delivery_date + 'T00:00:00');
@@ -219,8 +225,8 @@ function App() {
       }
     }
 
-    const pending = shipToday + overdue + scheduled + newOrders;
-    return { shipToday, overdue, scheduled, newOrders, pending };
+    const pending = shipToday + overdue + scheduled + newOrders + awaitingConsult;
+    return { shipToday, overdue, scheduled, newOrders, awaitingConsult, pending };
   };
 
   // Helper function to get the effective approval date (later of approved_at vs created_at)
@@ -306,9 +312,11 @@ function App() {
   // Apply filters (approved tab only)
   const orders = activeTab === 'approved'
     ? sortedOrders.filter(o => {
-        if (deliveryFilter === 'with_date') return !!o.preferred_delivery_date && !isDueToday(o);
-        if (deliveryFilter === 'due_today') return isDueToday(o);
-        if (deliveryFilter === 'overdue') return isOverdue(o);
+        const isAwaitingConsult = o.consultation_status && o.consultation_status.toLowerCase() === 'scheduled';
+        if (deliveryFilter === 'awaiting_consult') return isAwaitingConsult;
+        if (deliveryFilter === 'with_date') return !!o.preferred_delivery_date && !isDueToday(o) && !isAwaitingConsult;
+        if (deliveryFilter === 'due_today') return isDueToday(o) && !isAwaitingConsult;
+        if (deliveryFilter === 'overdue') return isOverdue(o) && !isAwaitingConsult;
         return true;
       })
     : sortedOrders;
@@ -317,9 +325,11 @@ function App() {
   const phtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
   const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
   
-  const allWithDateCount = approvedOrders.filter(o => o.preferred_delivery_date && !isDueToday(o)).length;
-  const dueTodayCount = approvedOrders.filter(o => isDueToday(o)).length;
-  const overdueCount = approvedOrders.filter(o => isOverdue(o)).length;
+  const awaitingConsultCount = approvedOrders.filter(o => o.consultation_status && o.consultation_status.toLowerCase() === 'scheduled').length;
+  const nonConsultOrders = approvedOrders.filter(o => !(o.consultation_status && o.consultation_status.toLowerCase() === 'scheduled'));
+  const allWithDateCount = nonConsultOrders.filter(o => o.preferred_delivery_date && !isDueToday(o)).length;
+  const dueTodayCount = nonConsultOrders.filter(o => isDueToday(o)).length;
+  const overdueCount = nonConsultOrders.filter(o => isOverdue(o)).length;
 
   // Prepare chart data (filter out Sundays for ship time)
   const shipTimeData = metrics?.days?.filter(d => !d.isSunday && d.avgShipTimeHours !== null) || [];
@@ -381,7 +391,7 @@ function App() {
 
         {/* Summary Tiles */}
         {summary && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 20 }}>
             <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
               <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>Ship Today</div>
               <div style={{ fontSize: 24, fontWeight: 700, color: tileCounts.shipToday > 0 ? C.accent : C.green, marginBottom: 2 }}>
@@ -404,6 +414,13 @@ function App() {
               <div style={{ fontSize: 10, color: C.gray }}>Future delivery dates</div>
             </div>
             <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
+              <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>Awaiting Consult</div>
+              <div style={{ fontSize: 24, fontWeight: 700, color: tileCounts.awaitingConsult > 0 ? '#9b59b6' : C.green, marginBottom: 2 }}>
+                {tileCounts.awaitingConsult}
+              </div>
+              <div style={{ fontSize: 10, color: C.gray }}>Consultation scheduled</div>
+            </div>
+            <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
               <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>New</div>
               <div style={{ fontSize: 24, fontWeight: 700, color: tileCounts.newOrders > 0 ? C.yellow : C.green, marginBottom: 2 }}>
                 {tileCounts.newOrders}
@@ -421,7 +438,7 @@ function App() {
           }}>
             <div style={{ fontSize: 14, color: C.gray }}>
               Total Pending: <span style={{ fontWeight: 700, color: C.dark, fontSize: 16 }}>{tileCounts.pending}</span>
-              <span style={{ color: C.gray, marginLeft: 8 }}>({tileCounts.shipToday} Ship Today + {tileCounts.scheduled} Scheduled + {tileCounts.newOrders} New)</span>
+              <span style={{ color: C.gray, marginLeft: 8 }}>({tileCounts.shipToday} Ship Today + {tileCounts.scheduled} Scheduled{tileCounts.awaitingConsult > 0 ? ` + ${tileCounts.awaitingConsult} Awaiting Consult` : ''} + {tileCounts.newOrders} New)</span>
             </div>
           </div>
         )}
@@ -603,6 +620,7 @@ function App() {
                   { key: 'due_today', label: 'Due Today', count: dueTodayCount },
                   { key: 'with_date', label: 'With Delivery Date', count: allWithDateCount },
                   { key: 'overdue', label: 'Overdue', count: overdueCount },
+                  { key: 'awaiting_consult', label: '⏳ Awaiting Consult', count: awaitingConsultCount },
                 ].map(f => (
                   <button key={f.key} onClick={() => setDeliveryFilter(f.key)}
                     style={{
@@ -665,6 +683,9 @@ function App() {
                         <td style={tdStyle}>
                           <div style={{ fontWeight: 600, color: C.accent }}>{order.name}</div>
                           <div style={{ fontSize: 11, color: C.gray }}>{new Date(order.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })}</div>
+                          {order.consultation_status && order.consultation_status.toLowerCase() === 'scheduled' && (
+                            <div style={{ fontSize: 10, color: '#9b59b6', fontWeight: 600, marginTop: 2 }}>⏳ Consult Scheduled</div>
+                          )}
                         </td>
                         <td style={tdStyle}>
                           <div style={{ fontSize: 14 }}>{order.customer?.first_name} {order.customer?.last_name}</div>
