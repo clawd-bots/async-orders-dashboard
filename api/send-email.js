@@ -60,6 +60,7 @@ export default async function handler(req, res) {
               }
               consultationStatusMetafield: metafield(namespace: "custom", key: "consultation_status") {
                 value
+                updatedAt
               }
               discountCodes
             }
@@ -129,6 +130,7 @@ export default async function handler(req, res) {
               return Array.isArray(parsed) ? parsed[0] : parsed;
             } catch { return node.consultationStatusMetafield?.value || null; }
           })(),
+          consultation_status_updated_at: node.consultationStatusMetafield?.updatedAt || null,
           customer: {
             first_name: node.customer?.firstName,
             last_name: node.customer?.lastName,

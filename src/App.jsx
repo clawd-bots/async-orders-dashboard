@@ -109,7 +109,7 @@ function App() {
         o.is_provincial ? 'Yes' : 'No',
         o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
         o.preferred_delivery_date || '',
-        o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
+        getEffectiveApprovalDate(o) ? new Date(getEffectiveApprovalDate(o)).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
         getHoursAgo(getEffectiveApprovalDate(o)),
         o.preferred_delivery_date ? 'Yes' : 'No',
       ]);
@@ -229,8 +229,17 @@ function App() {
     return { shipToday, overdue, scheduled, newOrders, awaitingConsult, pending };
   };
 
-  // Helper function to get the effective approval date (later of approved_at vs created_at)
+  // Helper function to get the effective approval date
+  // For orders that went through consultation: use consultation completion time
+  // For others: later of approved_at vs created_at
   const getEffectiveApprovalDate = (order) => {
+    // If order had a consultation and it's no longer "Scheduled", the real approval
+    // is when the consultation completed (status changed from Scheduled)
+    const cs = order.consultation_status?.toLowerCase();
+    if (order.consultation_status_updated_at && cs && cs !== 'scheduled' && cs !== 'not required') {
+      return order.consultation_status_updated_at;
+    }
+    
     const approvedAt = order.approved_at ? new Date(order.approved_at) : null;
     const createdAt = new Date(order.created_at);
     
@@ -730,9 +739,17 @@ function App() {
                                 : <span style={{ color: C.gray }}>—</span>}
                             </td>
                             <td style={{ ...tdStyle, fontSize: 11, color: C.gray }}>
-                              {order.approved_at
-                                ? new Date(order.approved_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-                                : <span style={{ color: C.gray }}>—</span>}
+                              {(() => {
+                                const effectiveDate = getEffectiveApprovalDate(order);
+                                const cs = order.consultation_status?.toLowerCase();
+                                const wasConsult = order.consultation_status_updated_at && cs && cs !== 'scheduled' && cs !== 'not required';
+                                return effectiveDate ? (
+                                  <>
+                                    {new Date(effectiveDate).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                                    {wasConsult && <div style={{ fontSize: 9, color: '#9b59b6', marginTop: 1 }}>Post-consult</div>}
+                                  </>
+                                ) : <span style={{ color: C.gray }}>—</span>;
+                              })()}
                             </td>
                             <td style={{ ...tdStyle, textAlign: 'right', fontSize: 12, fontWeight: 600, color: waitColor }}>
                               {getHoursAgo(waitRef)}
