@@ -111,7 +111,7 @@ function App() {
         o.preferred_delivery_date || '',
         getEffectiveApprovalDate(o) ? new Date(getEffectiveApprovalDate(o)).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
         getHoursAgo(getEffectiveApprovalDate(o)),
-        o.preferred_delivery_date ? 'Yes' : 'No',
+        'No',
       ]);
     } else {
       headers = ['Order Number', 'Date', 'Customer', 'Email', 'Items', 'SKUs', 'Prescription Status', 'Total'];

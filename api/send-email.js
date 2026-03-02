@@ -168,7 +168,7 @@ export default async function handler(req, res) {
         o.preferred_delivery_date || '',
         o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
         `${o.currency} ${parseFloat(o.total_price || 0).toLocaleString()}`,
-        o.preferred_delivery_date ? 'Yes' : 'No'
+        'No'
       ]);
       
       return [headers, ...rows]
