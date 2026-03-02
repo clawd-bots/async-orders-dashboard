@@ -306,7 +306,7 @@ function App() {
   // Apply filters (approved tab only)
   const orders = activeTab === 'approved'
     ? sortedOrders.filter(o => {
-        if (deliveryFilter === 'with_date') return !!o.preferred_delivery_date;
+        if (deliveryFilter === 'with_date') return !!o.preferred_delivery_date && !isDueToday(o);
         if (deliveryFilter === 'due_today') return isDueToday(o);
         if (deliveryFilter === 'overdue') return isOverdue(o);
         return true;
@@ -317,7 +317,7 @@ function App() {
   const phtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
   const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
   
-  const allWithDateCount = approvedOrders.filter(o => o.preferred_delivery_date).length;
+  const allWithDateCount = approvedOrders.filter(o => o.preferred_delivery_date && !isDueToday(o)).length;
   const dueTodayCount = approvedOrders.filter(o => isDueToday(o)).length;
   const overdueCount = approvedOrders.filter(o => isOverdue(o)).length;
 
