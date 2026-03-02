@@ -97,7 +97,7 @@ function App() {
 
     let headers, rows;
     if (activeTab === 'approved') {
-      headers = ['Order Number', 'Date', 'Customer', 'Phone', 'Items', 'SKUs', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Since Approval'];
+      headers = ['Order Number', 'Date', 'Customer', 'Phone', 'Items', 'SKUs', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Since Approval', 'Shipped'];
       rows = orders.map(o => [
         o.name,
         new Date(o.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' }),
@@ -111,6 +111,7 @@ function App() {
         o.preferred_delivery_date || '',
         o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
         getHoursAgo(getEffectiveApprovalDate(o)),
+        o.preferred_delivery_date ? 'Yes' : 'No',
       ]);
     } else {
       headers = ['Order Number', 'Date', 'Customer', 'Email', 'Items', 'SKUs', 'Prescription Status', 'Total'];

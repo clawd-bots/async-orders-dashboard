@@ -141,7 +141,7 @@ export default async function handler(req, res) {
 
     // Generate CSV content
     const generateCSV = (orders) => {
-      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Items', 'SKUs', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Total'];
+      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Items', 'SKUs', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Total', 'Shipped'];
       const rows = orders.map(o => [
         o.name,
         new Date(o.created_at).toLocaleDateString('en-PH'),
@@ -152,7 +152,8 @@ export default async function handler(req, res) {
         o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
         o.preferred_delivery_date || '',
         o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
-        `${o.currency} ${parseFloat(o.total_price || 0).toLocaleString()}`
+        `${o.currency} ${parseFloat(o.total_price || 0).toLocaleString()}`,
+        o.preferred_delivery_date ? 'Yes' : 'No'
       ]);
       
       return [headers, ...rows]
