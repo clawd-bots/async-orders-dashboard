@@ -451,11 +451,25 @@ function App() {
                   <YAxis tick={{ fontSize: 10, fill: C.gray }} unit="h" />
                   <Tooltip
                     contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                    formatter={(v) => [`${v}h`, 'Avg Ship Time']}
-                    labelFormatter={(v) => v}
+                    formatter={(v, name, props) => {
+                      const d = new Date(props.payload.date + 'T00:00:00');
+                      const isMonday = d.getDay() === 1;
+                      return [`${v}h${isMonday ? ' (includes Sunday gap — no fulfillment on Sundays)' : ''}`, 'Avg Ship Time'];
+                    }}
+                    labelFormatter={(v) => {
+                      const d = new Date(v + 'T00:00:00');
+                      const day = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+                      return `${day} ${v}`;
+                    }}
                   />
                   <ReferenceLine y={24} stroke={C.green} strokeDasharray="5 5" label={{ value: '24h target', fontSize: 10, fill: C.green, position: 'right' }} />
-                  <Line type="monotone" dataKey="avgShipTimeHours" stroke={C.accent} strokeWidth={2} dot={{ r: 3, fill: C.accent }} name="Avg Hours" />
+                  {shipTimeData.filter(d => new Date(d.date + 'T00:00:00').getDay() === 1).map(d => (
+                    <ReferenceLine key={d.date} x={d.date} stroke="#e9967a" strokeDasharray="3 3" strokeWidth={1} />
+                  ))}
+                  <Line type="monotone" dataKey="avgShipTimeHours" stroke={C.accent} strokeWidth={2} dot={(props) => {
+                    const isMonday = new Date(props.payload.date + 'T00:00:00').getDay() === 1;
+                    return <circle cx={props.cx} cy={props.cy} r={isMonday ? 5 : 3} fill={isMonday ? '#e9967a' : C.accent} stroke={isMonday ? '#c0392b' : 'none'} strokeWidth={isMonday ? 1.5 : 0} />;
+                  }} name="Avg Hours" />
                 </LineChart>
               </ResponsiveContainer>
             ) : (
@@ -463,6 +477,10 @@ function App() {
                 {metricsLoading ? 'Loading metrics...' : 'No data yet'}
               </div>
             )}
+            <div style={{ fontSize: 10, color: C.gray, marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#e9967a', border: '1.5px solid #c0392b' }}></span>
+              Mondays — times include Sunday (no fulfillment)
+            </div>
           </div>
 
           {/* Orders Fulfilled Per Day (MTD) */}

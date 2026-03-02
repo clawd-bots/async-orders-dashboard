@@ -59,6 +59,7 @@ export default async function handler(req, res) {
                       title
                       quantity
                       sku
+                      fulfillableQuantity
                     }
                   }
                 }
@@ -173,11 +174,13 @@ export default async function handler(req, res) {
             province: node.shippingAddress.province || '',
             zip: node.shippingAddress.zip || '',
           } : null,
-          line_items: node.lineItems?.edges?.map(e => ({
+          line_items: (node.lineItems?.edges?.map(e => ({
             title: e.node.title,
-            quantity: e.node.quantity,
-            sku: e.node.sku || ''
-          })) || []
+            quantity: e.node.fulfillableQuantity ?? e.node.quantity,
+            original_quantity: e.node.quantity,
+            sku: e.node.sku || '',
+            fulfillable_quantity: e.node.fulfillableQuantity ?? e.node.quantity
+          })) || []).filter(li => li.fulfillable_quantity > 0)
         };
       });
     
