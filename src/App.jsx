@@ -157,13 +157,17 @@ function App() {
     // Today's date for comparison (YYYY-MM-DD in PHT)
     const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
 
-    // Yesterday's cutoffs in PHT
+    // "Previous business day" cutoffs in PHT
+    // If today is Monday (1), previous business day is Saturday (not Sunday)
+    // If today is Sunday (0), we already returned zeros above
+    const prevBizDayOffset = phtDay === 1 ? 2 : 1; // Mon → go back 2 days (Sat), else go back 1 day
+
     const yesterday12NN = new Date(phtNow);
-    yesterday12NN.setDate(yesterday12NN.getDate() - 1);
+    yesterday12NN.setDate(yesterday12NN.getDate() - prevBizDayOffset);
     yesterday12NN.setHours(12, 0, 0, 0);
 
     const yesterday3PM = new Date(phtNow);
-    yesterday3PM.setDate(yesterday3PM.getDate() - 1);
+    yesterday3PM.setDate(yesterday3PM.getDate() - prevBizDayOffset);
     yesterday3PM.setHours(15, 0, 0, 0);
 
     // Today's cutoffs in PHT
@@ -278,8 +282,11 @@ function App() {
       // Orders WITHOUT delivery date: use existing cutoff logic
       const ref = getEffectiveApprovalDate(o);
       const isProvincial = o.is_provincial === true;
+      const phtDay = phtNow.getDay();
+      if (phtDay === 0) return false; // No fulfillment on Sundays — nothing is overdue
+      const prevBizDayOffset = phtDay === 1 ? 2 : 1; // Mon → Saturday cutoff, else yesterday
       const yesterdayCutoff = new Date(phtNow);
-      yesterdayCutoff.setDate(yesterdayCutoff.getDate() - 1);
+      yesterdayCutoff.setDate(yesterdayCutoff.getDate() - prevBizDayOffset);
       yesterdayCutoff.setHours(isProvincial ? 12 : 15, 0, 0, 0);
       const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
       return approvedPHT < yesterdayCutoff;
