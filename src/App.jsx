@@ -174,19 +174,24 @@ function App() {
     // If today is Sunday (0), we already returned zeros above
     const prevBizDayOffset = phtDay === 1 ? 2 : 1; // Mon → go back 2 days (Sat), else go back 1 day
 
+    // Metro cutoff: 1PM on Mondays, 3PM all other days
+    const metroCutoffHour = phtDay === 1 ? 13 : 15;
+    // Previous business day's metro cutoff: Saturday is never Monday, so always 3PM
+    const prevMetroCutoffHour = 15;
+
     const yesterday12NN = new Date(phtNow);
     yesterday12NN.setDate(yesterday12NN.getDate() - prevBizDayOffset);
     yesterday12NN.setHours(12, 0, 0, 0);
 
-    const yesterday3PM = new Date(phtNow);
-    yesterday3PM.setDate(yesterday3PM.getDate() - prevBizDayOffset);
-    yesterday3PM.setHours(15, 0, 0, 0);
+    const yesterdayMetro = new Date(phtNow);
+    yesterdayMetro.setDate(yesterdayMetro.getDate() - prevBizDayOffset);
+    yesterdayMetro.setHours(prevMetroCutoffHour, 0, 0, 0);
 
     // Today's cutoffs in PHT
     const today12NN = new Date(phtNow);
     today12NN.setHours(12, 0, 0, 0);
-    const today3PM = new Date(phtNow);
-    today3PM.setHours(15, 0, 0, 0);
+    const todayMetro = new Date(phtNow);
+    todayMetro.setHours(metroCutoffHour, 0, 0, 0);
 
     let shipToday = 0; // Orders due TODAY only (not overdue)
     let overdue = 0;   // Orders that should have shipped on a PREVIOUS day
@@ -221,8 +226,8 @@ function App() {
         const ref = getEffectiveApprovalDate(o);
         const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
         const isProvincial = o.is_provincial === true;
-        const yesterdayCutoff = isProvincial ? yesterday12NN : yesterday3PM;
-        const todayCutoff = isProvincial ? today12NN : today3PM;
+        const yesterdayCutoff = isProvincial ? yesterday12NN : yesterdayMetro;
+        const todayCutoff = isProvincial ? today12NN : todayMetro;
 
         if (approvedPHT < yesterdayCutoff) {
           // Approved before previous business day's cutoff → overdue
@@ -301,9 +306,11 @@ function App() {
       const ref = getEffectiveApprovalDate(o);
       const isProvincial = o.is_provincial === true;
       const prevBizDayOffset = phtDay === 1 ? 2 : 1;
+      // Previous biz day is never Monday, so metro cutoff is always 3PM for prev day
+      const prevMetroHour = 15;
       const yesterdayCutoff = new Date(phtNow);
       yesterdayCutoff.setDate(yesterdayCutoff.getDate() - prevBizDayOffset);
-      yesterdayCutoff.setHours(isProvincial ? 12 : 15, 0, 0, 0);
+      yesterdayCutoff.setHours(isProvincial ? 12 : prevMetroHour, 0, 0, 0);
       const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
       return approvedPHT < yesterdayCutoff;
     }
@@ -326,11 +333,15 @@ function App() {
       const ref = getEffectiveApprovalDate(o);
       const isProvincial = o.is_provincial === true;
       const prevBizDayOffset = phtDay2 === 1 ? 2 : 1;
+      // Metro cutoff: 1PM on Mondays, 3PM other days
+      const metroHour = phtDay2 === 1 ? 13 : 15;
+      // Previous biz day is never Monday, so always 3PM
+      const prevMetroHour = 15;
       const yesterdayCutoff = new Date(phtNow2);
       yesterdayCutoff.setDate(yesterdayCutoff.getDate() - prevBizDayOffset);
-      yesterdayCutoff.setHours(isProvincial ? 12 : 15, 0, 0, 0);
+      yesterdayCutoff.setHours(isProvincial ? 12 : prevMetroHour, 0, 0, 0);
       const todayCutoff = new Date(phtNow2);
-      todayCutoff.setHours(isProvincial ? 12 : 15, 0, 0, 0);
+      todayCutoff.setHours(isProvincial ? 12 : metroHour, 0, 0, 0);
       const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
       return approvedPHT >= yesterdayCutoff && approvedPHT < todayCutoff;
     }
