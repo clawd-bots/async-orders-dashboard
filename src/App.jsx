@@ -175,7 +175,7 @@ function App() {
     const prevBizDayOffset = phtDay === 1 ? 2 : 1; // Mon → go back 2 days (Sat), else go back 1 day
 
     // Metro cutoff: 1PM on Mondays, 3PM all other days
-    const metroCutoffHour = phtDay === 1 ? 13 : 15;
+    const metroCutoffHour = phtDay === 1 ? 14 : 15;
     // Previous business day's metro cutoff: Saturday is never Monday, so always 3PM
     const prevMetroCutoffHour = 15;
 
@@ -334,7 +334,7 @@ function App() {
       const isProvincial = o.is_provincial === true;
       const prevBizDayOffset = phtDay2 === 1 ? 2 : 1;
       // Metro cutoff: 1PM on Mondays, 3PM other days
-      const metroHour = phtDay2 === 1 ? 13 : 15;
+      const metroHour = phtDay2 === 1 ? 14 : 15;
       // Previous biz day is never Monday, so always 3PM
       const prevMetroHour = 15;
       const yesterdayCutoff = new Date(phtNow2);
