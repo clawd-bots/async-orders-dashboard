@@ -236,7 +236,7 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          to: ['andrea@andyou.ph', 'karell@andyou.ph', 'raymund@andyou.ph', 'bryan_bumanglag@andyou.ph'],
+          to: ['andrea@andyou.ph', 'karell@andyou.ph', 'bryan_bumanglag@andyou.ph'],
           cc: ['wesley@andyou.ph'],
           subject: `📦 Daily Fulfillment Report — ${approvedOrders.length} ready to ship, ${notApprovedOrders.length} pending`,
           text: emailBody,
