@@ -126,7 +126,16 @@ export default async function handler(req, res) {
         const hasKeevtest = discountCodes.some(code => 
           code?.toLowerCase?.().includes('keevtest')
         );
-        return !hasKeevtest;
+        if (hasKeevtest) return false;
+        
+        // Exclude orders tagged "Manually Refunded"
+        const tags = edge.node.tags || [];
+        const isManuallyRefunded = tags.some(t => 
+          t.toLowerCase().includes('manually refunded')
+        );
+        if (isManuallyRefunded) return false;
+        
+        return true;
       })
       .map(edge => {
         const node = edge.node;
