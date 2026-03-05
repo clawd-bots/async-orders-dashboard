@@ -80,6 +80,9 @@ export default async function handler(req, res) {
                   value
                   updatedAt
                 }
+                orderStatusMetafield: metafield(namespace: "custom", key: "order_status") {
+                  value
+                }
                 discountCodes
               }
             }
@@ -128,12 +131,9 @@ export default async function handler(req, res) {
         );
         if (hasKeevtest) return false;
         
-        // Exclude orders tagged "Manually Refunded"
-        const tags = edge.node.tags || [];
-        const isManuallyRefunded = tags.some(t => 
-          t.toLowerCase().includes('manually refunded')
-        );
-        if (isManuallyRefunded) return false;
+        // Exclude orders with Order Status = "Manually Refunded"
+        const orderStatus = edge.node.orderStatusMetafield?.value?.toLowerCase?.() || '';
+        if (orderStatus.includes('manually refunded')) return false;
         
         return true;
       })
