@@ -35,6 +35,14 @@ export default async function handler(req, res) {
                 lastName
                 email
               }
+              shippingAddress {
+                phone
+                address1
+                address2
+                city
+                province
+                zip
+              }
               lineItems(first: 10) {
                 edges {
                   node {
@@ -146,6 +154,15 @@ export default async function handler(req, res) {
             last_name: node.customer?.lastName,
             email: node.customer?.email
           },
+          shipping_address: node.shippingAddress ? {
+            phone: node.shippingAddress.phone || '',
+            address1: node.shippingAddress.address1 || '',
+            address2: node.shippingAddress.address2 || '',
+            city: node.shippingAddress.city || '',
+            province: node.shippingAddress.province || '',
+            zip: node.shippingAddress.zip || '',
+          } : null,
+          is_provincial: node.shippingAddress?.province ? !['Metro Manila', 'NCR', 'National Capital Region'].some(m => (node.shippingAddress?.province || '').toLowerCase().includes(m.toLowerCase())) : false,
           line_items: (node.lineItems?.edges?.map(e => ({
             title: e.node.variantTitle && e.node.variantTitle !== 'Default Title' ? `${e.node.title} — ${e.node.variantTitle}` : e.node.title,
             quantity: e.node.fulfillableQuantity ?? e.node.quantity,
@@ -166,7 +183,7 @@ export default async function handler(req, res) {
 
     // Generate CSV content
     const generateCSV = (orders) => {
-      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Product', 'SKU', 'Qty', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Total', 'Shipped'];
+      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Total', 'Shipped'];
       const rows = orders.flatMap(o => 
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
           Array.from({ length: Math.max(item.quantity || 1, 1) }, () => [
@@ -174,9 +191,12 @@ export default async function handler(req, res) {
             new Date(o.created_at).toLocaleDateString('en-PH'),
             `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim() || 'Guest',
             o.customer?.email || '',
+            o.shipping_address?.phone || '',
             item.title || '',
             item.sku || '',
             1,
+            o.shipping_address ? `${o.shipping_address.address1 || ''}${o.shipping_address.address2 ? ', ' + o.shipping_address.address2 : ''}, ${o.shipping_address.city || ''}, ${o.shipping_address.province || ''} ${o.shipping_address.zip || ''}` : '',
+            o.is_provincial ? 'Yes' : 'No',
             o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
             o.preferred_delivery_date || '',
             o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
