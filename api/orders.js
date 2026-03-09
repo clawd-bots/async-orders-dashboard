@@ -57,6 +57,7 @@ export default async function handler(req, res) {
                   edges {
                     node {
                       title
+                      variantTitle
                       quantity
                       sku
                       fulfillableQuantity
@@ -197,7 +198,7 @@ export default async function handler(req, res) {
             zip: node.shippingAddress.zip || '',
           } : null,
           line_items: (node.lineItems?.edges?.map(e => ({
-            title: e.node.title,
+            title: e.node.variantTitle && e.node.variantTitle !== 'Default Title' ? `${e.node.title} — ${e.node.variantTitle}` : e.node.title,
             quantity: e.node.fulfillableQuantity ?? e.node.quantity,
             original_quantity: e.node.quantity,
             sku: e.node.sku || '',
