@@ -167,20 +167,22 @@ export default async function handler(req, res) {
     const generateCSV = (orders) => {
       const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Product', 'SKU', 'Qty', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Total', 'Shipped'];
       const rows = orders.flatMap(o => 
-        (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).map(item => [
-          o.name,
-          new Date(o.created_at).toLocaleDateString('en-PH'),
-          `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim() || 'Guest',
-          o.customer?.email || '',
-          item.title || '',
-          item.sku || '',
-          item.quantity || '',
-          o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
-          o.preferred_delivery_date || '',
-          o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
-          `${o.currency} ${parseFloat(o.total_price || 0).toLocaleString()}`,
-          'No'
-        ])
+        (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
+          Array.from({ length: Math.max(item.quantity || 1, 1) }, () => [
+            o.name,
+            new Date(o.created_at).toLocaleDateString('en-PH'),
+            `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim() || 'Guest',
+            o.customer?.email || '',
+            item.title || '',
+            item.sku || '',
+            1,
+            o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
+            o.preferred_delivery_date || '',
+            o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
+            `${o.currency} ${parseFloat(o.total_price || 0).toLocaleString()}`,
+            'No'
+          ])
+        )
       );
       
       return [headers, ...rows]
