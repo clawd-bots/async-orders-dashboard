@@ -700,7 +700,8 @@ function App() {
                     <th style={thStyle}>Order</th>
                     <th style={thStyle}>Customer</th>
                     {activeTab === 'approved' && <th style={thStyle}>Phone</th>}
-                    <th style={thStyle}>Items</th>
+                    <th style={thStyle}>Product</th>
+                    <th style={thStyle}>SKU</th>
                     {activeTab === 'approved' && (
                       <>
                         <th style={thStyle}>Shipping Address</th>
@@ -720,14 +721,25 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((order, i) => {
+                  {orders.flatMap((order) => {
+                    const items = order.line_items?.length > 0 ? order.line_items : [{ title: '', sku: '', quantity: 1 }];
+                    // Expand each item by its quantity (1 row per unit)
+                    const expandedRows = items.flatMap((item, itemIdx) =>
+                      Array.from({ length: Math.max(item.quantity || 1, 1) }, (_, unitIdx) => ({
+                        order,
+                        item,
+                        key: `${order.id}-${itemIdx}-${unitIdx}`,
+                      }))
+                    );
+                    return expandedRows;
+                  }).map(({ order, item, key }, i) => {
                     const waitRef = getEffectiveApprovalDate(order);
                     const waitHrs = (new Date() - new Date(waitRef)) / (1000 * 60 * 60);
                     const waitColor = waitHrs > 72 ? C.red : waitHrs > 24 ? C.yellow : C.gray;
                     const addr = order.shipping_address;
 
                     return (
-                      <tr key={order.id} style={{ borderTop: i > 0 ? `1px solid ${C.beige}` : 'none' }}>
+                      <tr key={key} style={{ borderTop: i > 0 ? `1px solid ${C.beige}` : 'none' }}>
                         <td style={tdStyle}>
                           <div style={{ fontWeight: 600, color: C.accent }}>{order.name}</div>
                           <div style={{ fontSize: 11, color: C.gray }}>{new Date(order.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })}</div>
@@ -745,12 +757,10 @@ function App() {
                           <td style={{ ...tdStyle, fontSize: 12 }}>{addr?.phone || <span style={{ color: C.gray }}>—</span>}</td>
                         )}
                         <td style={{ ...tdStyle, fontSize: 13 }}>
-                          {order.line_items?.slice(0, 2).map((item, j) => (
-                            <div key={j}>{item.quantity}× {item.title.length > 25 ? item.title.slice(0, 25) + '...' : item.title}</div>
-                          ))}
-                          {order.line_items?.length > 2 && (
-                            <div style={{ color: C.gray, fontSize: 11 }}>+{order.line_items.length - 2} more</div>
-                          )}
+                          {item.title ? (item.title.length > 35 ? item.title.slice(0, 35) + '...' : item.title) : '—'}
+                        </td>
+                        <td style={{ ...tdStyle, fontSize: 11, color: C.gray }}>
+                          {item.sku || '—'}
                         </td>
                         {activeTab === 'approved' && (
                           <>
