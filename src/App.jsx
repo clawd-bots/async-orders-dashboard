@@ -699,12 +699,9 @@ function App() {
                   <tr style={{ background: C.cream, position: 'sticky', top: 0, zIndex: 1 }}>
                     <th style={thStyle}>Order</th>
                     <th style={thStyle}>Customer</th>
-                    {activeTab === 'approved' && <th style={thStyle}>Phone</th>}
                     <th style={thStyle}>Product</th>
-                    <th style={thStyle}>SKU</th>
                     {activeTab === 'approved' && (
                       <>
-                        <th style={thStyle}>Shipping Address</th>
                         <th style={{ ...thStyle, textAlign: 'center' }}>Provincial</th>
                         <th style={{ ...thStyle, textAlign: 'center' }}>Pref. Delivery</th>
                         <th style={thStyle}>Delivery Date</th>
@@ -753,25 +750,11 @@ function App() {
                             <div style={{ fontSize: 11, color: C.gray }}>{order.customer?.email}</div>
                           )}
                         </td>
-                        {activeTab === 'approved' && (
-                          <td style={{ ...tdStyle, fontSize: 12 }}>{addr?.phone || <span style={{ color: C.gray }}>—</span>}</td>
-                        )}
                         <td style={{ ...tdStyle, fontSize: 13 }}>
-                          {item.title ? (item.title.length > 35 ? item.title.slice(0, 35) + '...' : item.title) : '—'}
-                        </td>
-                        <td style={{ ...tdStyle, fontSize: 11, color: C.gray }}>
-                          {item.sku || '—'}
+                          {item.title ? (item.title.length > 45 ? item.title.slice(0, 45) + '...' : item.title) : '—'}
                         </td>
                         {activeTab === 'approved' && (
                           <>
-                            <td style={{ ...tdStyle, fontSize: 11, maxWidth: 180 }}>
-                              {addr ? (
-                                <div style={{ lineHeight: 1.4 }}>
-                                  {addr.address1}{addr.address2 ? `, ${addr.address2}` : ''}<br />
-                                  {addr.city}, {addr.province} {addr.zip}
-                                </div>
-                              ) : <span style={{ color: C.gray }}>—</span>}
-                            </td>
                             <td style={{ ...tdStyle, textAlign: 'center', fontSize: 12 }}>
                               {order.is_provincial
                                 ? <span style={{ background: '#FEF3C7', color: C.yellow, padding: '2px 8px', borderRadius: 12, fontWeight: 600, fontSize: 11 }}>Provincial</span>
