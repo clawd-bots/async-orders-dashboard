@@ -792,7 +792,7 @@ function App() {
 
         <div style={{ marginTop: 20, padding: 16, background: C.cream, borderRadius: 8, fontSize: 13, color: C.gray }}>
           <strong>📧 Daily Email:</strong> Sent every day at 8:00 AM PHT with pending fulfillment orders.
-          {' · '}<strong>🕒 Cutoff:</strong> Orders approved before 3:00 PM are due same day (Mon–Sat). No fulfillment on Sundays.
+          {' · '}<strong>🕒 Cutoff:</strong> Orders approved before 12:00 PM are due same day (Mon–Sat). No fulfillment on Sundays.
         </div>
       </main>
     </div>
