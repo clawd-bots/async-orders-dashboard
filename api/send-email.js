@@ -183,7 +183,7 @@ export default async function handler(req, res) {
 
     // Generate CSV content
     const generateCSV = (orders) => {
-      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Total', 'Shipped'];
+      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Shipped'];
       const rows = orders.flatMap(o => 
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
           Array.from({ length: Math.max(item.quantity || 1, 1) }, () => [
@@ -199,7 +199,6 @@ export default async function handler(req, res) {
             o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
             o.preferred_delivery_date || '',
             o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
-            `${o.currency} ${parseFloat(o.total_price || 0).toLocaleString()}`,
             'No'
           ])
         )
