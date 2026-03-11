@@ -426,7 +426,7 @@ function App() {
         </div>
       </header>
 
-      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 20px' }}>
+      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 12px' }}>
         {message && (
           <div style={{
             padding: '12px 16px', borderRadius: 8, marginBottom: 16,
@@ -437,7 +437,7 @@ function App() {
 
         {/* Summary Tiles */}
         {summary && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 20 }}>
             <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
               <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>Ship Today</div>
               <div style={{ fontSize: 24, fontWeight: 700, color: (tileCounts.shipToday + tileCounts.overdue) > 0 ? C.accent : C.green, marginBottom: 2 }}>
@@ -484,13 +484,13 @@ function App() {
           }}>
             <div style={{ fontSize: 14, color: C.gray }}>
               Total Pending: <span style={{ fontWeight: 700, color: C.dark, fontSize: 16 }}>{tileCounts.pending}</span>
-              <span style={{ color: C.gray, marginLeft: 8 }}>({tileCounts.shipToday} Ship Today + {tileCounts.scheduled} Scheduled{tileCounts.awaitingConsult > 0 ? ` + ${tileCounts.awaitingConsult} Awaiting Consult` : ''} + {tileCounts.newOrders} New)</span>
+              <span style={{ color: C.gray, marginLeft: 8 }}>({tileCounts.shipToday + tileCounts.overdue} Ship Today + {tileCounts.scheduled} Scheduled{tileCounts.awaitingConsult > 0 ? ` + ${tileCounts.awaitingConsult} Awaiting Consult` : ''} + {tileCounts.newOrders} New)</span>
             </div>
           </div>
         )}
 
         {/* Charts Row */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 20 }}>
           {/* Approved to Ship Time */}
           <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
@@ -691,8 +691,8 @@ function App() {
                 : 'Configure Shopify API to get started'}
             </div>
           ) : (
-            <div style={{ maxHeight: 600, overflowY: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={{ maxHeight: 600, overflowY: 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
                 <thead>
                   <tr style={{ background: C.cream, position: 'sticky', top: 0, zIndex: 1 }}>
                     <th style={thStyle}>Order</th>
