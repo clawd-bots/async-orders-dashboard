@@ -361,7 +361,7 @@ function App() {
         const awaitingConsult = isAwaitingConsultation(o);
         if (deliveryFilter === 'awaiting_consult') return awaitingConsult;
         if (deliveryFilter === 'with_date') return !!o.preferred_delivery_date && !isDueToday(o) && !awaitingConsult;
-        if (deliveryFilter === 'due_today') return isDueToday(o) && !awaitingConsult;
+        if (deliveryFilter === 'due_today') return (isDueToday(o) || isOverdue(o)) && !awaitingConsult;
         if (deliveryFilter === 'overdue') return isOverdue(o) && !awaitingConsult;
         return true;
       })
@@ -374,7 +374,7 @@ function App() {
   const awaitingConsultCount = approvedOrders.filter(o => isAwaitingConsultation(o)).length;
   const nonConsultOrders = approvedOrders.filter(o => !isAwaitingConsultation(o));
   const allWithDateCount = nonConsultOrders.filter(o => o.preferred_delivery_date && !isDueToday(o)).length;
-  const dueTodayCount = nonConsultOrders.filter(o => isDueToday(o)).length;
+  const dueTodayCount = nonConsultOrders.filter(o => isDueToday(o) || isOverdue(o)).length;
   const overdueCount = nonConsultOrders.filter(o => isOverdue(o)).length;
 
   // Prepare chart data (filter out Sundays for ship time)
