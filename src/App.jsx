@@ -440,10 +440,10 @@ function App() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16, marginBottom: 20 }}>
             <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
               <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>Ship Today</div>
-              <div style={{ fontSize: 24, fontWeight: 700, color: tileCounts.shipToday > 0 ? C.accent : C.green, marginBottom: 2 }}>
-                {tileCounts.shipToday}
+              <div style={{ fontSize: 24, fontWeight: 700, color: (tileCounts.shipToday + tileCounts.overdue) > 0 ? C.accent : C.green, marginBottom: 2 }}>
+                {tileCounts.shipToday + tileCounts.overdue}
               </div>
-              <div style={{ fontSize: 10, color: C.gray }}>Must go out today</div>
+              <div style={{ fontSize: 10, color: C.gray }}>Must go out today{tileCounts.overdue > 0 ? ` (incl. ${tileCounts.overdue} overdue)` : ''}</div>
             </div>
             <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
               <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>Overdue</div>
