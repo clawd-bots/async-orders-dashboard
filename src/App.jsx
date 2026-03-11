@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts';
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = import.meta.env.VITE_INVENTORY_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_INVENTORY_SUPABASE_ANON_KEY;
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 const C = {
   bg: "#FAF9F7",
@@ -29,6 +34,7 @@ function App() {
   const [metrics, setMetrics] = useState(null);
   const [metricsLoading, setMetricsLoading] = useState(false);
   const [deliveryFilter, setDeliveryFilter] = useState('all'); // 'all' | 'with_date' | 'due_today' | 'overdue'
+  const [batchMap, setBatchMap] = useState({}); // SKU -> [{ batch_number, expiry_date, quantity }]
 
   useEffect(() => {
     fetch('/api/status')
@@ -52,11 +58,13 @@ function App() {
       if (data.error) {
         setMessage({ type: 'error', text: data.error });
       } else {
-        setApprovedOrders(data.approved?.orders || []);
+        const approved = data.approved?.orders || [];
+        setApprovedOrders(approved);
         setApprovedSummary(data.approved?.summary);
         setNotApprovedOrders(data.notApproved?.orders || []);
         setNotApprovedSummary(data.notApproved?.summary);
         setLastFetch(new Date().toLocaleString());
+        fetchBatches(approved);
         const ac = data.approved?.summary?.count || 0;
         const nc = data.notApproved?.summary?.count || 0;
         setMessage({ type: 'success', text: `Found ${ac} approved, ${nc} not approved` });
@@ -77,6 +85,50 @@ function App() {
     setMetricsLoading(false);
   };
 
+  const fetchBatches = async (orders) => {
+    if (!supabase || orders.length === 0) return;
+    try {
+      const skus = [...new Set(orders.flatMap(o => (o.line_items || []).map(li => li.sku).filter(Boolean)))];
+      if (skus.length === 0) return;
+
+      const { data: products } = await supabase
+        .from('shopify_products')
+        .select('id, sku')
+        .in('sku', skus);
+      if (!products || products.length === 0) return;
+
+      const skuToProductId = {};
+      for (const p of products) skuToProductId[p.sku] = p.id;
+      const productIds = [...new Set(Object.values(skuToProductId))];
+
+      const { data: batches } = await supabase
+        .from('product_batches')
+        .select('product_id, batch_number, expiry_date, quantity')
+        .in('product_id', productIds)
+        .gt('quantity', 0)
+        .order('expiry_date', { ascending: true });
+      if (!batches) return;
+
+      const productIdToSku = {};
+      for (const [sku, pid] of Object.entries(skuToProductId)) {
+        if (!productIdToSku[pid]) productIdToSku[pid] = [];
+        productIdToSku[pid].push(sku);
+      }
+
+      const map = {};
+      for (const b of batches) {
+        const skusForProduct = productIdToSku[b.product_id] || [];
+        for (const sku of skusForProduct) {
+          if (!map[sku]) map[sku] = [];
+          map[sku].push({ batch_number: b.batch_number, expiry_date: b.expiry_date, quantity: b.quantity });
+        }
+      }
+      setBatchMap(map);
+    } catch (e) {
+      console.error('Failed to fetch batches:', e);
+    }
+  };
+
   const sendEmail = async () => {
     setSending(true);
     setMessage(null);
@@ -92,35 +144,42 @@ function App() {
   };
 
   const downloadCSV = () => {
-    const orders = activeTab === 'approved' ? approvedOrders : notApprovedOrders;
-    if (orders.length === 0) return;
+    const csvOrders = activeTab === 'approved' ? approvedOrders : notApprovedOrders;
+    if (csvOrders.length === 0) return;
 
     let headers, rows;
     if (activeTab === 'approved') {
-      headers = ['Order Number', 'Date', 'Customer', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Since Approval', 'Shipped'];
-      rows = orders.flatMap(o => 
+      const csvAllocations = allocateBatches(csvOrders);
+      let allocIdx = 0;
+      headers = ['Order Number', 'Date', 'Customer', 'Phone', 'Product', 'SKU', 'Qty', 'Batch', 'Batch Expiry', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Since Approval', 'Shipped'];
+      rows = csvOrders.flatMap(o =>
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
-          Array.from({ length: Math.max(item.quantity || 1, 1) }, () => [
-            o.name,
-            new Date(o.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' }),
-            `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim(),
-            o.shipping_address?.phone || '',
-            item.title || '',
-            item.sku || '',
-            1,
-            o.shipping_address ? `${o.shipping_address.address1}, ${o.shipping_address.city}, ${o.shipping_address.province} ${o.shipping_address.zip}` : '',
-            o.is_provincial ? 'Yes' : 'No',
-            o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
-            o.preferred_delivery_date || '',
-            getEffectiveApprovalDate(o) ? new Date(getEffectiveApprovalDate(o)).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
-            getHoursAgo(getEffectiveApprovalDate(o)),
-            'No',
-          ])
+          Array.from({ length: Math.max(item.quantity || 1, 1) }, () => {
+            const alloc = csvAllocations[allocIdx++];
+            return [
+              o.name,
+              new Date(o.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' }),
+              `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim(),
+              o.shipping_address?.phone || '',
+              item.title || '',
+              item.sku || '',
+              1,
+              alloc ? alloc.batch_number : 'No stock',
+              alloc ? alloc.expiry_date : '',
+              o.shipping_address ? `${o.shipping_address.address1}, ${o.shipping_address.city}, ${o.shipping_address.province} ${o.shipping_address.zip}` : '',
+              o.is_provincial ? 'Yes' : 'No',
+              o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
+              o.preferred_delivery_date || '',
+              getEffectiveApprovalDate(o) ? new Date(getEffectiveApprovalDate(o)).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
+              getHoursAgo(getEffectiveApprovalDate(o)),
+              'No',
+            ];
+          })
         )
       );
     } else {
       headers = ['Order Number', 'Date', 'Customer', 'Email', 'Product', 'SKU', 'Qty', 'Prescription Status', 'Total'];
-      rows = orders.flatMap(o => 
+      rows = csvOrders.flatMap(o =>
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
           Array.from({ length: Math.max(item.quantity || 1, 1) }, () => [
             o.name,
@@ -285,6 +344,45 @@ function App() {
     return order.created_at;
   };
 
+  // FIFO batch allocation: assign earliest-expiring batch to each unit row
+  const allocateBatches = (orderList) => {
+    const remaining = {};
+    for (const [sku, batches] of Object.entries(batchMap)) {
+      remaining[sku] = batches.map(b => ({ ...b, remaining: b.quantity }));
+    }
+    const allocations = []; // parallel array to expanded rows
+    for (const order of orderList) {
+      const items = order.line_items?.length > 0 ? order.line_items : [{ title: '', sku: '', quantity: 1 }];
+      for (const item of items) {
+        const units = Math.max(item.quantity || 1, 1);
+        for (let u = 0; u < units; u++) {
+          const skuBatches = remaining[item.sku];
+          if (skuBatches) {
+            const batch = skuBatches.find(b => b.remaining > 0);
+            if (batch) {
+              allocations.push({ batch_number: batch.batch_number, expiry_date: batch.expiry_date });
+              batch.remaining--;
+            } else {
+              allocations.push(null);
+            }
+          } else {
+            allocations.push(null);
+          }
+        }
+      }
+    }
+    return allocations;
+  };
+
+  const getBatchExpiryColor = (expiryDate) => {
+    if (!expiryDate) return C.gray;
+    const days = (new Date(expiryDate) - new Date()) / (1000 * 60 * 60 * 24);
+    if (days <= 7) return C.red;
+    if (days <= 30) return C.yellow;
+    if (days > 90) return C.green;
+    return C.dark;
+  };
+
   const rawOrders = activeTab === 'approved' ? approvedOrders : notApprovedOrders;
   const summary = activeTab === 'approved' ? approvedSummary : notApprovedSummary;
   const tileCounts = getTileCounts();
@@ -366,6 +464,9 @@ function App() {
         return true;
       })
     : sortedOrders;
+
+  // Compute FIFO batch allocations for displayed approved orders
+  const batchAllocations = activeTab === 'approved' ? allocateBatches(orders) : [];
 
   // Filter counts for badges
   const phtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
@@ -700,6 +801,7 @@ function App() {
                     <th style={thStyle}>Product</th>
                     {activeTab === 'approved' && (
                       <>
+                        <th style={thStyle}>Batch</th>
                         <th style={{ ...thStyle, textAlign: 'center' }}>Provincial</th>
                         <th style={{ ...thStyle, textAlign: 'center' }}>Pref. Delivery</th>
                         <th style={thStyle}>Delivery Date</th>
@@ -753,6 +855,21 @@ function App() {
                         </td>
                         {activeTab === 'approved' && (
                           <>
+                            <td style={{ ...tdStyle, fontSize: 12 }}>
+                              {(() => {
+                                const alloc = batchAllocations[i];
+                                if (!alloc) return <span style={{ color: C.red, fontWeight: 600, fontSize: 11 }}>No stock</span>;
+                                const expiryColor = getBatchExpiryColor(alloc.expiry_date);
+                                return (
+                                  <div>
+                                    <div style={{ fontWeight: 600, color: expiryColor, fontSize: 12 }}>{alloc.batch_number}</div>
+                                    <div style={{ fontSize: 10, color: expiryColor }}>
+                                      Exp: {new Date(alloc.expiry_date).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </td>
                             <td style={{ ...tdStyle, textAlign: 'center', fontSize: 12 }}>
                               {order.is_provincial
                                 ? <span style={{ background: '#FEF3C7', color: C.yellow, padding: '2px 8px', borderRadius: 12, fontWeight: 600, fontSize: 11 }}>Provincial</span>
