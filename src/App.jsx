@@ -184,16 +184,26 @@ function App() {
     // If today is Sunday (0), we already returned zeros above
     const prevBizDayOffset = phtDay === 1 ? 2 : 1; // Mon → go back 2 days (Sat), else go back 1 day
 
-    // Unified cutoff: 12 noon for both provincial and metro
-    const cutoffHour = 12;
+    // Cutoff hours: 7:30 AM for all orders, 12 noon for sexual health (Erectile Dysfunction)
+    const defaultCutoffHour = 7.5; // 7:30 AM
+    const sexualHealthCutoffHour = 12; // 12 noon
 
-    const yesterdayCutoffTime = new Date(phtNow);
-    yesterdayCutoffTime.setDate(yesterdayCutoffTime.getDate() - prevBizDayOffset);
-    yesterdayCutoffTime.setHours(cutoffHour, 0, 0, 0);
+    // Helper: check if order contains sexual health products
+    const isSexualHealthOrder = (o) => (o.line_items || []).some(li =>
+      (li.product_type || '').toLowerCase().includes('erectile dysfunction')
+    );
 
-    // Today's cutoff in PHT
-    const todayCutoffTime = new Date(phtNow);
-    todayCutoffTime.setHours(cutoffHour, 0, 0, 0);
+    // Helper: get cutoff times for a given hour (supports half hours)
+    const makeCutoff = (baseDate, hour) => {
+      const d = new Date(baseDate);
+      d.setHours(Math.floor(hour), (hour % 1) * 60, 0, 0);
+      return d;
+    };
+
+    const yesterdayDefault = makeCutoff(new Date(phtNow.getTime() - prevBizDayOffset * 86400000), defaultCutoffHour);
+    const yesterdaySexHealth = makeCutoff(new Date(phtNow.getTime() - prevBizDayOffset * 86400000), sexualHealthCutoffHour);
+    const todayDefault = makeCutoff(phtNow, defaultCutoffHour);
+    const todaySexHealth = makeCutoff(phtNow, sexualHealthCutoffHour);
 
     let shipToday = 0; // Orders due TODAY only (not overdue)
     let overdue = 0;   // Orders that should have shipped on a PREVIOUS day
@@ -227,8 +237,9 @@ function App() {
         // Orders WITHOUT delivery date: use cutoff logic
         const ref = getEffectiveApprovalDate(o);
         const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
-        const yesterdayCutoff = yesterdayCutoffTime;
-        const todayCutoff = todayCutoffTime;
+        const isSH = isSexualHealthOrder(o);
+        const yesterdayCutoff = isSH ? yesterdaySexHealth : yesterdayDefault;
+        const todayCutoff = isSH ? todaySexHealth : todayDefault;
 
         if (approvedPHT < yesterdayCutoff) {
           // Approved before previous business day's cutoff → overdue
@@ -303,12 +314,14 @@ function App() {
       const deliveryDateOnly = new Date(deliveryDatePHT.getFullYear(), deliveryDatePHT.getMonth(), deliveryDatePHT.getDate());
       return deliveryDateOnly < todayPHT;
     } else {
-      // No delivery date: overdue if approved before previous biz day's cutoff (12 noon)
+      // No delivery date: overdue if approved before previous biz day's cutoff
       const ref = getEffectiveApprovalDate(o);
       const prevBizDayOffset = phtDay === 1 ? 2 : 1;
+      const isSH = (o.line_items || []).some(li => (li.product_type || '').toLowerCase().includes('erectile dysfunction'));
+      const cutoffH = isSH ? 12 : 7.5;
       const yesterdayCutoff = new Date(phtNow);
       yesterdayCutoff.setDate(yesterdayCutoff.getDate() - prevBizDayOffset);
-      yesterdayCutoff.setHours(12, 0, 0, 0);
+      yesterdayCutoff.setHours(Math.floor(cutoffH), (cutoffH % 1) * 60, 0, 0);
       const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
       return approvedPHT < yesterdayCutoff;
     }
@@ -327,14 +340,16 @@ function App() {
       const ddOnly = new Date(ddPHT.getFullYear(), ddPHT.getMonth(), ddPHT.getDate());
       return ddOnly.getTime() === todayPHT2.getTime();
     } else {
-      // No delivery date: due today if approved between prev biz day's cutoff and today's cutoff (12 noon)
+      // No delivery date: due today if approved between prev biz day's cutoff and today's cutoff
       const ref = getEffectiveApprovalDate(o);
       const prevBizDayOffset = phtDay2 === 1 ? 2 : 1;
+      const isSH = (o.line_items || []).some(li => (li.product_type || '').toLowerCase().includes('erectile dysfunction'));
+      const cutoffH = isSH ? 12 : 7.5;
       const yesterdayCutoff = new Date(phtNow2);
       yesterdayCutoff.setDate(yesterdayCutoff.getDate() - prevBizDayOffset);
-      yesterdayCutoff.setHours(12, 0, 0, 0);
+      yesterdayCutoff.setHours(Math.floor(cutoffH), (cutoffH % 1) * 60, 0, 0);
       const todayCutoff = new Date(phtNow2);
-      todayCutoff.setHours(12, 0, 0, 0);
+      todayCutoff.setHours(Math.floor(cutoffH), (cutoffH % 1) * 60, 0, 0);
       const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
       return approvedPHT >= yesterdayCutoff && approvedPHT < todayCutoff;
     }
@@ -792,7 +807,7 @@ function App() {
 
         <div style={{ marginTop: 20, padding: 16, background: C.cream, borderRadius: 8, fontSize: 13, color: C.gray }}>
           <strong>📧 Daily Email:</strong> Sent every day at 8:00 AM PHT with pending fulfillment orders.
-          {' · '}<strong>🕒 Cutoff:</strong> Orders approved before 12:00 PM are due same day (Mon–Sat). No fulfillment on Sundays.
+          {' · '}<strong>🕒 Cutoff:</strong> 7:30 AM for all orders, 12:00 PM for Sexual Health (Mon–Sat). No fulfillment on Sundays.
         </div>
       </main>
     </div>

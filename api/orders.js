@@ -61,6 +61,9 @@ export default async function handler(req, res) {
                       quantity
                       sku
                       fulfillableQuantity
+                      product {
+                        productType
+                      }
                     }
                   }
                 }
@@ -202,7 +205,8 @@ export default async function handler(req, res) {
             quantity: e.node.fulfillableQuantity ?? e.node.quantity,
             original_quantity: e.node.quantity,
             sku: e.node.sku || '',
-            fulfillable_quantity: e.node.fulfillableQuantity ?? e.node.quantity
+            fulfillable_quantity: e.node.fulfillableQuantity ?? e.node.quantity,
+            product_type: e.node.product?.productType || ''
           })) || []).filter(li => li.fulfillable_quantity > 0)
         };
       });
