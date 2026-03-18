@@ -66,6 +66,7 @@ export default async function handler(req) {
                 }
                 metafield(namespace: "custom", key: "approved_to_ship") {
                   value
+                  updatedAt
                 }
                 preferredDeliveryMetafield: metafield(namespace: "custom", key: "preferred_delivery") {
                   value
@@ -78,6 +79,13 @@ export default async function handler(req) {
                 }
                 orderStatusMetafield: metafield(namespace: "custom", key: "order_status") {
                   value
+                }
+                upsellMetafield: metafield(namespace: "custom", key: "upsell") {
+                  value
+                }
+                upsellPaidMetafield: metafield(namespace: "custom", key: "upsell_paid") {
+                  value
+                  updatedAt
                 }
                 discountCodes
               }
@@ -157,6 +165,7 @@ export default async function handler(req) {
           total_price: node.totalPriceSet?.shopMoney?.amount,
           currency: node.totalPriceSet?.shopMoney?.currencyCode,
           approved_to_ship: approvedToShip,
+          approved_at: approvedToShip === true ? (metafield?.updatedAt || null) : null,
           preferred_delivery: preferredDelivery,
           preferred_delivery_date: node.preferredDeliveryDateMetafield?.value || null,
           prescription_status: node.prescriptionStatusMetafield?.value || null,
@@ -168,12 +177,62 @@ export default async function handler(req) {
           line_items: node.lineItems?.edges?.map(e => ({
             title: e.node.title,
             quantity: e.node.quantity
-          })) || []
+          })) || [],
+          upsell: (() => {
+            const v = node.upsellMetafield?.value?.toLowerCase?.() || '';
+            if (v === 'true' || v === '1' || v === 'yes') return true;
+            if (v === 'false' || v === '0' || v === 'no') return false;
+            return null;
+          })(),
+          upsell_paid: (() => {
+            const v = node.upsellPaidMetafield?.value?.toLowerCase?.() || '';
+            if (v === 'true' || v === '1' || v === 'yes') return true;
+            if (v === 'false' || v === '0' || v === 'no') return false;
+            return null;
+          })(),
+          upsell_paid_at: (() => {
+            const v = node.upsellPaidMetafield?.value?.toLowerCase?.() || '';
+            return (v === 'true' || v === '1' || v === 'yes') ? (node.upsellPaidMetafield?.updatedAt || null) : null;
+          })(),
         };
       });
 
+    // Overdue helper
+    const getNextCutoffAfter = (date) => {
+      const d = new Date(date);
+      const phtDate = new Date(d.getTime() + 8 * 3600000);
+      const year = phtDate.getUTCFullYear();
+      const month = phtDate.getUTCMonth();
+      const day = phtDate.getUTCDate();
+      const cutoff7am = new Date(Date.UTC(year, month, day, 7, 0, 0) - 8 * 3600000);
+      const cutoff12pm = new Date(Date.UTC(year, month, day, 12, 0, 0) - 8 * 3600000);
+      if (d < cutoff7am) return cutoff7am;
+      if (d < cutoff12pm) return cutoff12pm;
+      return new Date(Date.UTC(year, month, day + 1, 7, 0, 0) - 8 * 3600000);
+    };
+
+    const isOrderOverdue = (order) => {
+      let startTime;
+      if (order.upsell === true) {
+        if (!order.upsell_paid) return false;
+        startTime = new Date(order.upsell_paid_at);
+      } else {
+        if (!order.approved_at) return false;
+        startTime = new Date(order.approved_at);
+      }
+      return new Date() > getNextCutoffAfter(startTime);
+    };
+
     // Separate approved and not approved orders
-    const approvedOrders = filteredOrders.filter(o => o.approved_to_ship === true);
+    const approvedOrders = filteredOrders
+      .filter(o => {
+        if (o.approved_to_ship !== true) return false;
+        if (o.upsell === true) return o.upsell_paid === true;
+        return true;
+      })
+      .map(o => ({ ...o, overdue: isOrderOverdue(o) }));
+    const awaitingUpsellOrders = filteredOrders
+      .filter(o => o.approved_to_ship === true && o.upsell === true && o.upsell_paid !== true);
     const notApprovedOrders = filteredOrders.filter(o => o.approved_to_ship === false);
     
     // Sort by date (newest first)
@@ -187,8 +246,10 @@ export default async function handler(req) {
     
     // Calculate summary for not approved orders
     const notApprovedTotalValue = notApprovedOrders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
-    const notApprovedTotalItems = notApprovedOrders.reduce((sum, o) => 
+    const notApprovedTotalItems = notApprovedOrders.reduce((sum, o) =>
       sum + (o.line_items?.reduce((s, i) => s + i.quantity, 0) || 0), 0);
+    const overdueOrders = approvedOrders.filter(o => o.overdue);
+    const awaitingUpsellTotalValue = awaitingUpsellOrders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
 
     const currency = (approvedOrders[0] || notApprovedOrders[0])?.currency || 'PHP';
 
@@ -203,13 +264,59 @@ export default async function handler(req) {
     
     emailBody += `SUMMARY\n`;
     emailBody += `-`.repeat(30) + `\n`;
+    if (overdueOrders.length > 0) {
+      emailBody += `🚨 OVERDUE: ${overdueOrders.length} orders\n`;
+    }
     emailBody += `Approved Orders: ${approvedOrders.length} (${currency} ${approvedTotalValue.toLocaleString()}, ${approvedTotalItems} items)\n`;
+    if (awaitingUpsellOrders.length > 0) {
+      emailBody += `Awaiting Upsell Payment: ${awaitingUpsellOrders.length} (${currency} ${awaitingUpsellTotalValue.toLocaleString()})\n`;
+    }
     emailBody += `Not Approved Orders: ${notApprovedOrders.length} (${currency} ${notApprovedTotalValue.toLocaleString()}, ${notApprovedTotalItems} items)\n`;
-    emailBody += `Total Pending: ${approvedOrders.length + notApprovedOrders.length} orders\n\n`;
+    emailBody += `Total Pending: ${approvedOrders.length + awaitingUpsellOrders.length + notApprovedOrders.length} orders\n\n`;
 
-    if (approvedOrders.length === 0 && notApprovedOrders.length === 0) {
+    if (approvedOrders.length === 0 && awaitingUpsellOrders.length === 0 && notApprovedOrders.length === 0) {
       emailBody += `✅ All orders have been fulfilled! Great job!\n`;
     } else {
+      // OVERDUE ORDERS SECTION
+      if (overdueOrders.length > 0) {
+        emailBody += `🚨 OVERDUE ORDERS (${overdueOrders.length})\n`;
+        emailBody += `-`.repeat(30) + `\n\n`;
+        overdueOrders.forEach((order, i) => {
+          const customerName = [order.customer?.first_name, order.customer?.last_name].filter(Boolean).join(' ') || 'Guest';
+          const orderDate = new Date(order.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' });
+          emailBody += `${i + 1}. ${order.name} - ${customerName}\n`;
+          emailBody += `   Date: ${orderDate}\n`;
+          emailBody += `   Total: ${order.currency} ${parseFloat(order.total_price).toLocaleString()}\n`;
+          if (order.upsell === true) {
+            emailBody += `   Upsell: Paid ✅ (${new Date(order.upsell_paid_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })})\n`;
+          }
+          emailBody += `   Items:\n`;
+          order.line_items?.forEach(item => {
+            emailBody += `     - ${item.quantity}× ${item.title}\n`;
+          });
+          emailBody += `\n`;
+        });
+      }
+
+      // AWAITING UPSELL PAYMENT SECTION
+      if (awaitingUpsellOrders.length > 0) {
+        emailBody += `💰 AWAITING UPSELL PAYMENT (${awaitingUpsellOrders.length})\n`;
+        emailBody += `-`.repeat(30) + `\n\n`;
+        awaitingUpsellOrders.forEach((order, i) => {
+          const customerName = [order.customer?.first_name, order.customer?.last_name].filter(Boolean).join(' ') || 'Guest';
+          const orderDate = new Date(order.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' });
+          emailBody += `${i + 1}. ${order.name} - ${customerName}\n`;
+          emailBody += `   Date: ${orderDate}\n`;
+          emailBody += `   Total: ${order.currency} ${parseFloat(order.total_price).toLocaleString()}\n`;
+          emailBody += `   Upsell: Awaiting Payment ⏳\n`;
+          emailBody += `   Items:\n`;
+          order.line_items?.forEach(item => {
+            emailBody += `     - ${item.quantity}× ${item.title}\n`;
+          });
+          emailBody += `\n`;
+        });
+      }
+
       // APPROVED ORDERS SECTION
       if (approvedOrders.length > 0) {
         emailBody += `✅ APPROVED ORDERS (${approvedOrders.length})\n`;
@@ -232,7 +339,10 @@ export default async function handler(req) {
             const deliveryDate = new Date(order.preferred_delivery_date).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' });
             emailBody += `   Delivery Date: ${deliveryDate}\n`;
           }
-          
+          if (order.upsell === true) {
+            emailBody += `   Upsell: Paid ✅\n`;
+          }
+
           emailBody += `   Items:\n`;
           order.line_items?.forEach(item => {
             emailBody += `     - ${item.quantity}× ${item.title}\n`;
@@ -284,7 +394,7 @@ export default async function handler(req) {
     emailBody += `\n---\nGenerated automatically at 8:00 AM PHT\nView dashboard: https://shopify-async-orders.vercel.app\n`;
 
     // Send via AgentMail with CC recipients
-    const totalPendingOrders = approvedOrders.length + notApprovedOrders.length;
+    const totalPendingOrders = approvedOrders.length + awaitingUpsellOrders.length + notApprovedOrders.length;
     const emailRes = await fetch('https://api.agentmail.io/v0/email', {
       method: 'POST',
       headers: {
@@ -295,7 +405,9 @@ export default async function handler(req) {
         from: 'edwin@mail.andyou.ph',
         to: 'wesley@andyou.ph',
         cc: ['andrea@andyou.ph', 'bryan_bumanglag@andyou.ph'],
-        subject: `📦 Daily Fulfillment Report: ${approvedOrders.length} approved, ${notApprovedOrders.length} not approved - ${today}`,
+        subject: overdueOrders.length > 0
+          ? `🚨 ${overdueOrders.length} OVERDUE | 📦 ${approvedOrders.length} ready to ship, ${notApprovedOrders.length + awaitingUpsellOrders.length} pending - ${today}`
+          : `📦 Daily Fulfillment Report: ${approvedOrders.length} approved, ${notApprovedOrders.length} not approved - ${today}`,
         text: emailBody
       })
     });
@@ -306,9 +418,11 @@ export default async function handler(req) {
     }
 
     return new Response(JSON.stringify({ 
-      success: true, 
+      success: true,
       approvedOrderCount: approvedOrders.length,
       notApprovedOrderCount: notApprovedOrders.length,
+      overdueCount: overdueOrders.length,
+      awaitingUpsellCount: awaitingUpsellOrders.length,
       totalOrderCount: totalPendingOrders,
       sentAt: new Date().toISOString()
     }), {

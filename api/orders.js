@@ -84,6 +84,13 @@ export default async function handler(req, res) {
                   value
                   updatedAt
                 }
+                upsellMetafield: metafield(namespace: "custom", key: "upsell") {
+                  value
+                }
+                upsellPaidMetafield: metafield(namespace: "custom", key: "upsell_paid") {
+                  value
+                  updatedAt
+                }
                 orderStatusMetafield: metafield(namespace: "custom", key: "order_status") {
                   value
                 }
@@ -185,6 +192,22 @@ export default async function handler(req, res) {
             } catch { return node.consultationStatusMetafield?.value || null; }
           })(),
           consultation_status_updated_at: node.consultationStatusMetafield?.updatedAt || null,
+          upsell: (() => {
+            const v = node.upsellMetafield?.value?.toLowerCase?.() || '';
+            if (v === 'true' || v === '1' || v === 'yes') return true;
+            if (v === 'false' || v === '0' || v === 'no') return false;
+            return null;
+          })(),
+          upsell_paid: (() => {
+            const v = node.upsellPaidMetafield?.value?.toLowerCase?.() || '';
+            if (v === 'true' || v === '1' || v === 'yes') return true;
+            if (v === 'false' || v === '0' || v === 'no') return false;
+            return null;
+          })(),
+          upsell_paid_at: (() => {
+            const v = node.upsellPaidMetafield?.value?.toLowerCase?.() || '';
+            return (v === 'true' || v === '1' || v === 'yes') ? (node.upsellPaidMetafield?.updatedAt || null) : null;
+          })(),
           tags: node.tags || [],
           is_provincial: (node.tags || []).some(t => t.toLowerCase() === 'provincial'),
           customer: {
@@ -211,7 +234,44 @@ export default async function handler(req, res) {
         };
       });
     
-    const approvedOrders = filteredOrders.filter(o => o.approved_to_ship === true);
+    // Overdue helper: check if any 7AM or 12PM PHT cutoff has passed since start time
+    const getNextCutoffAfter = (date) => {
+      const d = new Date(date);
+      const phtDate = new Date(d.getTime() + 8 * 3600000); // Convert to PHT
+      const year = phtDate.getUTCFullYear();
+      const month = phtDate.getUTCMonth();
+      const day = phtDate.getUTCDate();
+      const cutoff7am = new Date(Date.UTC(year, month, day, 7, 0, 0) - 8 * 3600000);
+      const cutoff12pm = new Date(Date.UTC(year, month, day, 12, 0, 0) - 8 * 3600000);
+      if (d < cutoff7am) return cutoff7am;
+      if (d < cutoff12pm) return cutoff12pm;
+      return new Date(Date.UTC(year, month, day + 1, 7, 0, 0) - 8 * 3600000);
+    };
+
+    const isOrderOverdue = (order) => {
+      let startTime;
+      if (order.upsell === true) {
+        if (!order.upsell_paid) return false;
+        startTime = new Date(order.upsell_paid_at);
+      } else {
+        if (!order.approved_at) return false;
+        startTime = new Date(order.approved_at);
+      }
+      return new Date() > getNextCutoffAfter(startTime);
+    };
+
+    // Fulfillment ready: approved AND (no upsell needed OR upsell is paid)
+    const approvedOrders = filteredOrders
+      .filter(o => {
+        if (o.approved_to_ship !== true) return false;
+        if (o.upsell === true) return o.upsell_paid === true;
+        return true;
+      })
+      .map(o => ({ ...o, overdue: isOrderOverdue(o) }));
+
+    // Awaiting upsell payment: approved but upsell not yet paid
+    const awaitingUpsellOrders = filteredOrders
+      .filter(o => o.approved_to_ship === true && o.upsell === true && o.upsell_paid !== true);
     const notApprovedOrders = filteredOrders.filter(o => {
       if (o.approved_to_ship !== false) return false;
       const ps = o.prescription_status || '';
@@ -222,6 +282,7 @@ export default async function handler(req, res) {
     // Sort by created_at descending (newest first)
     approvedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     notApprovedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    awaitingUpsellOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
     // Calculate totals for approved
     const approvedValue = approvedOrders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
@@ -230,8 +291,15 @@ export default async function handler(req, res) {
     
     // Calculate totals for not approved
     const notApprovedValue = notApprovedOrders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
-    const notApprovedItems = notApprovedOrders.reduce((sum, o) => 
+    const notApprovedItems = notApprovedOrders.reduce((sum, o) =>
       sum + (o.line_items?.reduce((s, i) => s + i.quantity, 0) || 0), 0);
+
+    // Calculate totals for awaiting upsell
+    const awaitingUpsellValue = awaitingUpsellOrders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
+    const awaitingUpsellItems = awaitingUpsellOrders.reduce((sum, o) =>
+      sum + (o.line_items?.reduce((s, i) => s + i.quantity, 0) || 0), 0);
+
+    const overdueCount = approvedOrders.filter(o => o.overdue).length;
 
     res.json({ 
       approved: {
@@ -252,6 +320,16 @@ export default async function handler(req, res) {
           currency: notApprovedOrders[0]?.currency || 'PHP'
         }
       },
+      awaitingUpsell: {
+        orders: awaitingUpsellOrders,
+        summary: {
+          count: awaitingUpsellOrders.length,
+          totalValue: awaitingUpsellValue.toFixed(2),
+          totalItems: awaitingUpsellItems,
+          currency: awaitingUpsellOrders[0]?.currency || 'PHP'
+        }
+      },
+      overdueCount,
       fetchedAt: new Date().toISOString()
     });
     

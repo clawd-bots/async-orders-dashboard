@@ -23,8 +23,11 @@ const C = {
 function App() {
   const [approvedOrders, setApprovedOrders] = useState([]);
   const [notApprovedOrders, setNotApprovedOrders] = useState([]);
+  const [awaitingUpsellOrders, setAwaitingUpsellOrders] = useState([]);
   const [approvedSummary, setApprovedSummary] = useState(null);
   const [notApprovedSummary, setNotApprovedSummary] = useState(null);
+  const [awaitingUpsellSummary, setAwaitingUpsellSummary] = useState(null);
+  const [overdueCount, setOverdueCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState(null);
@@ -63,11 +66,16 @@ function App() {
         setApprovedSummary(data.approved?.summary);
         setNotApprovedOrders(data.notApproved?.orders || []);
         setNotApprovedSummary(data.notApproved?.summary);
+        setAwaitingUpsellOrders(data.awaitingUpsell?.orders || []);
+        setAwaitingUpsellSummary(data.awaitingUpsell?.summary);
+        setOverdueCount(data.overdueCount || 0);
         setLastFetch(new Date().toLocaleString());
         fetchBatches(approved);
         const ac = data.approved?.summary?.count || 0;
         const nc = data.notApproved?.summary?.count || 0;
-        setMessage({ type: 'success', text: `Found ${ac} approved, ${nc} not approved` });
+        const uc = data.awaitingUpsell?.summary?.count || 0;
+        const oc = data.overdueCount || 0;
+        setMessage({ type: 'success', text: `Found ${ac} approved, ${nc} not approved${uc > 0 ? `, ${uc} awaiting upsell` : ''}${oc > 0 ? `, ${oc} overdue` : ''}` });
       }
     } catch (e) {
       setMessage({ type: 'error', text: e.message });
@@ -151,7 +159,7 @@ function App() {
     if (activeTab === 'approved') {
       const csvAllocations = allocateBatches(csvOrders);
       let allocIdx = 0;
-      headers = ['Order Number', 'Date', 'Customer', 'Phone', 'Product', 'SKU', 'Qty', 'Batch', 'Batch Expiry', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Since Approval', 'Shipped'];
+      headers = ['Order Number', 'Date', 'Customer', 'Phone', 'Product', 'SKU', 'Qty', 'Batch', 'Batch Expiry', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Since Approval', 'Upsell', 'Upsell Paid', 'Upsell Paid Date', 'Overdue', 'Shipped'];
       rows = csvOrders.flatMap(o =>
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
           Array.from({ length: Math.max(item.quantity || 1, 1) }, () => {
@@ -172,6 +180,10 @@ function App() {
               o.preferred_delivery_date || '',
               getEffectiveApprovalDate(o) ? new Date(getEffectiveApprovalDate(o)).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
               getHoursAgo(getEffectiveApprovalDate(o)),
+              o.upsell === true ? 'Yes' : 'No',
+              o.upsell_paid === true ? 'Yes' : 'No',
+              o.upsell_paid_at ? new Date(o.upsell_paid_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
+              o.overdue ? 'Yes' : 'No',
               'No',
             ];
           })
@@ -383,8 +395,8 @@ function App() {
     return C.dark;
   };
 
-  const rawOrders = activeTab === 'approved' ? approvedOrders : notApprovedOrders;
-  const summary = activeTab === 'approved' ? approvedSummary : notApprovedSummary;
+  const rawOrders = activeTab === 'approved' ? approvedOrders : activeTab === 'awaitingUpsell' ? awaitingUpsellOrders : notApprovedOrders;
+  const summary = activeTab === 'approved' ? approvedSummary : activeTab === 'awaitingUpsell' ? awaitingUpsellSummary : notApprovedSummary;
   const tileCounts = getTileCounts();
 
   // Sort approved orders by approved_at descending (most recent first)
@@ -574,6 +586,15 @@ function App() {
               </div>
               <div style={{ fontSize: 10, color: C.gray }}>Approved after today's cutoff</div>
             </div>
+            {awaitingUpsellOrders.length > 0 && (
+              <div style={{ background: '#fff', borderRadius: 12, padding: 20, border: `1px solid ${C.beige}` }}>
+                <div style={{ fontSize: 12, color: C.gray, marginBottom: 4 }}>Awaiting Upsell</div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: '#e67e22', marginBottom: 2 }}>
+                  {awaitingUpsellOrders.length}
+                </div>
+                <div style={{ fontSize: 10, color: C.gray }}>Upsell payment pending</div>
+              </div>
+            )}
           </div>
         )}
         
@@ -745,6 +766,18 @@ function App() {
                 }}>
                 ✗ Rejected ({notApprovedSummary?.count || 0})
               </button>
+              {awaitingUpsellOrders.length > 0 && (
+                <button onClick={() => setActiveTab('awaitingUpsell')}
+                  style={{
+                    padding: '10px 20px', borderRadius: 8,
+                    border: activeTab === 'awaitingUpsell' ? `2px solid #e67e22` : `1px solid ${C.beige}`,
+                    background: activeTab === 'awaitingUpsell' ? '#FEF3C7' : '#fff',
+                    color: activeTab === 'awaitingUpsell' ? '#e67e22' : C.dark,
+                    fontWeight: 600, fontSize: 14, cursor: 'pointer'
+                  }}>
+                  💰 Awaiting Upsell ({awaitingUpsellSummary?.count || 0})
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -758,7 +791,7 @@ function App() {
             display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12
           }}>
             <div style={{ fontWeight: 600, color: C.dark }}>
-              {activeTab === 'approved' ? 'Approved & Pending Fulfillment' : 'Rejected (For Cancellation/Refund)'} ({orders.length})
+              {activeTab === 'approved' ? 'Approved & Pending Fulfillment' : activeTab === 'awaitingUpsell' ? 'Awaiting Upsell Payment' : 'Rejected (For Cancellation/Refund)'} ({orders.length})
             </div>
             {activeTab === 'approved' && (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -787,7 +820,7 @@ function App() {
             <div style={{ padding: 40, textAlign: 'center', color: C.gray }}>
               {configured
                 ? (lastFetch
-                  ? (activeTab === 'approved' ? '✅ All approved orders fulfilled!' : '✅ No rejected orders')
+                  ? (activeTab === 'approved' ? '✅ All approved orders fulfilled!' : activeTab === 'awaitingUpsell' ? '✅ No orders awaiting upsell payment' : '✅ No rejected orders')
                   : 'Click "Refresh" to load')
                 : 'Configure Shopify API to get started'}
             </div>
@@ -807,6 +840,12 @@ function App() {
                         <th style={thStyle}>Delivery Date</th>
                         <th style={thStyle}>Approved On</th>
                         <th style={{ ...thStyle, textAlign: 'right' }}>Since Approval</th>
+                      </>
+                    )}
+                    {activeTab === 'awaitingUpsell' && (
+                      <>
+                        <th style={thStyle}>Upsell Status</th>
+                        <th style={{ ...thStyle, textAlign: 'right' }}>Total</th>
                       </>
                     )}
                     {activeTab === 'notApproved' && (
@@ -838,10 +877,20 @@ function App() {
                     return (
                       <tr key={key} style={{ borderTop: i > 0 ? `1px solid ${C.beige}` : 'none' }}>
                         <td style={tdStyle}>
-                          <div style={{ fontWeight: 600, color: C.accent }}>{order.name}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontWeight: 600, color: C.accent }}>{order.name}</span>
+                            {order.overdue && (
+                              <span style={{ background: C.red, color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4 }}>OVERDUE</span>
+                            )}
+                          </div>
                           <div style={{ fontSize: 11, color: C.gray }}>{new Date(order.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' })}</div>
                           {isAwaitingConsultation(order) && (
                             <div style={{ fontSize: 10, color: '#9b59b6', fontWeight: 600, marginTop: 2 }}>⏳ Consult Scheduled</div>
+                          )}
+                          {order.upsell === true && (
+                            <div style={{ fontSize: 10, fontWeight: 600, marginTop: 2, color: order.upsell_paid ? C.green : '#e67e22' }}>
+                              {order.upsell_paid ? 'Upsell: Paid ✅' : 'Upsell: Awaiting Payment ⏳'}
+                            </div>
                           )}
                         </td>
                         <td style={tdStyle}>
@@ -903,6 +952,16 @@ function App() {
                             </td>
                           </>
                         )}
+                        {activeTab === 'awaitingUpsell' && (
+                          <>
+                            <td style={{ ...tdStyle, fontSize: 13 }}>
+                              <span style={{ color: '#e67e22', fontWeight: 600 }}>⏳ Awaiting Payment</span>
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600 }}>
+                              {order.currency} {parseFloat(order.total_price).toLocaleString()}
+                            </td>
+                          </>
+                        )}
                         {activeTab === 'notApproved' && (
                           <>
                             <td style={{ ...tdStyle, fontSize: 13 }}>
@@ -925,6 +984,7 @@ function App() {
         <div style={{ marginTop: 20, padding: 16, background: C.cream, borderRadius: 8, fontSize: 13, color: C.gray }}>
           <strong>📧 Daily Email:</strong> Sent every day at 8:00 AM PHT with pending fulfillment orders.
           {' · '}<strong>🕒 Cutoff:</strong> 7:30 AM for all orders, 12:00 PM for Sexual Health (Mon–Sat). No fulfillment on Sundays.
+          {' · '}<strong>💰 Upsell:</strong> Orders with upsell require payment before appearing on fulfillment list. Overdue after next 7AM/12PM PHT cutoff.
         </div>
       </main>
     </div>

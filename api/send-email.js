@@ -74,6 +74,13 @@ export default async function handler(req, res) {
               orderStatusMetafield: metafield(namespace: "custom", key: "order_status") {
                 value
               }
+              upsellMetafield: metafield(namespace: "custom", key: "upsell") {
+                value
+              }
+              upsellPaidMetafield: metafield(namespace: "custom", key: "upsell_paid") {
+                value
+                updatedAt
+              }
               discountCodes
             }
           }
@@ -149,6 +156,22 @@ export default async function handler(req, res) {
             } catch { return node.consultationStatusMetafield?.value || null; }
           })(),
           consultation_status_updated_at: node.consultationStatusMetafield?.updatedAt || null,
+          upsell: (() => {
+            const v = node.upsellMetafield?.value?.toLowerCase?.() || '';
+            if (v === 'true' || v === '1' || v === 'yes') return true;
+            if (v === 'false' || v === '0' || v === 'no') return false;
+            return null;
+          })(),
+          upsell_paid: (() => {
+            const v = node.upsellPaidMetafield?.value?.toLowerCase?.() || '';
+            if (v === 'true' || v === '1' || v === 'yes') return true;
+            if (v === 'false' || v === '0' || v === 'no') return false;
+            return null;
+          })(),
+          upsell_paid_at: (() => {
+            const v = node.upsellPaidMetafield?.value?.toLowerCase?.() || '';
+            return (v === 'true' || v === '1' || v === 'yes') ? (node.upsellPaidMetafield?.updatedAt || null) : null;
+          })(),
           customer: {
             first_name: node.customer?.firstName,
             last_name: node.customer?.lastName,
@@ -172,8 +195,42 @@ export default async function handler(req, res) {
         };
       });
 
+    // Overdue helper
+    const getNextCutoffAfter = (date) => {
+      const d = new Date(date);
+      const phtDate = new Date(d.getTime() + 8 * 3600000);
+      const year = phtDate.getUTCFullYear();
+      const month = phtDate.getUTCMonth();
+      const day = phtDate.getUTCDate();
+      const cutoff7am = new Date(Date.UTC(year, month, day, 7, 0, 0) - 8 * 3600000);
+      const cutoff12pm = new Date(Date.UTC(year, month, day, 12, 0, 0) - 8 * 3600000);
+      if (d < cutoff7am) return cutoff7am;
+      if (d < cutoff12pm) return cutoff12pm;
+      return new Date(Date.UTC(year, month, day + 1, 7, 0, 0) - 8 * 3600000);
+    };
+
+    const isOrderOverdue = (order) => {
+      let startTime;
+      if (order.upsell === true) {
+        if (!order.upsell_paid) return false;
+        startTime = new Date(order.upsell_paid_at);
+      } else {
+        if (!order.approved_at) return false;
+        startTime = new Date(order.approved_at);
+      }
+      return new Date() > getNextCutoffAfter(startTime);
+    };
+
     // Split into approved and not approved (explicitly false only, exclude blanks)
-    const approvedOrders = filteredOrders.filter(o => o.approved_to_ship === true);
+    const approvedOrders = filteredOrders
+      .filter(o => {
+        if (o.approved_to_ship !== true) return false;
+        if (o.upsell === true) return o.upsell_paid === true;
+        return true;
+      })
+      .map(o => ({ ...o, overdue: isOrderOverdue(o) }));
+    const awaitingUpsellOrders = filteredOrders
+      .filter(o => o.approved_to_ship === true && o.upsell === true && o.upsell_paid !== true);
     const notApprovedOrders = filteredOrders.filter(o => {
       if (o.approved_to_ship !== false) return false;
       const ps = o.prescription_status || '';
@@ -183,7 +240,7 @@ export default async function handler(req, res) {
 
     // Generate CSV content
     const generateCSV = (orders) => {
-      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Shipped'];
+      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Upsell', 'Upsell Paid', 'Upsell Paid Date', 'Overdue', 'Shipped'];
       const rows = orders.flatMap(o => 
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
           Array.from({ length: Math.max(item.quantity || 1, 1) }, () => [
@@ -199,6 +256,10 @@ export default async function handler(req, res) {
             o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
             o.preferred_delivery_date || '',
             o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
+            o.upsell === true ? 'Yes' : 'No',
+            o.upsell_paid === true ? 'Yes' : 'No',
+            o.upsell_paid_at ? new Date(o.upsell_paid_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
+            o.overdue ? 'Yes' : 'No',
             'No'
           ])
         )
@@ -225,8 +286,11 @@ export default async function handler(req, res) {
 
     // Calculate totals for not approved  
     const notApprovedValue = notApprovedOrders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
-    const notApprovedItems = notApprovedOrders.reduce((sum, o) => 
+    const notApprovedItems = notApprovedOrders.reduce((sum, o) =>
       sum + (o.line_items?.reduce((s, i) => s + i.quantity, 0) || 0), 0);
+
+    const overdueOrders = approvedOrders.filter(o => o.overdue);
+    const awaitingUpsellValue = awaitingUpsellOrders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
 
     // Count old orders (3+ days) that DON'T have a scheduled delivery date
     const oldApprovedOrders = approvedOrders.filter(o => {
@@ -237,12 +301,21 @@ export default async function handler(req, res) {
     // Build friendly email message
     let emailBody = `Hi team! 👋\n\n`;
     emailBody += `Here's your daily fulfillment update for ${todayFormatted}.\n\n`;
-    
+
+    if (overdueOrders.length > 0) {
+      emailBody += `🚨 **OVERDUE: ${overdueOrders.length} order(s) past their fulfillment cutoff!**\n\n`;
+    }
+
     emailBody += `📦 **Ready to Ship (Approved)**\n`;
     emailBody += `   ${approvedOrders.length} orders · PHP ${approvedValue.toLocaleString()} · ${approvedItems} items\n\n`;
     
     emailBody += `⏳ **Pending Approval**\n`;
     emailBody += `   ${notApprovedOrders.length} orders · PHP ${notApprovedValue.toLocaleString()} · ${notApprovedItems} items\n\n`;
+
+    if (awaitingUpsellOrders.length > 0) {
+      emailBody += `💰 **Awaiting Upsell Payment**\n`;
+      emailBody += `   ${awaitingUpsellOrders.length} orders · PHP ${awaitingUpsellValue.toLocaleString()}\n\n`;
+    }
 
     if (oldApprovedOrders.length > 0) {
       emailBody += `⚠️ Heads up: ${oldApprovedOrders.length} approved order(s) are 3+ days old and need attention!\n\n`;
@@ -252,9 +325,13 @@ export default async function handler(req, res) {
       emailBody += `Great news — all approved orders have been fulfilled! 🎉\n\n`;
     }
 
-    emailBody += `I've attached two CSV files with the full details:\n`;
+    emailBody += `I've attached ${awaitingUpsellOrders.length > 0 ? 'three' : 'two'} CSV files with the full details:\n`;
     emailBody += `• ATS_${dateStr}.csv — Approved orders ready to ship\n`;
-    emailBody += `• NOT_APPROVED_${dateStr}.csv — Orders pending approval\n\n`;
+    emailBody += `• NOT_APPROVED_${dateStr}.csv — Orders pending approval\n`;
+    if (awaitingUpsellOrders.length > 0) {
+      emailBody += `• AWAITING_UPSELL_${dateStr}.csv — Orders awaiting upsell payment\n`;
+    }
+    emailBody += `\n`;
     
     emailBody += `Let me know if you need anything else!\n\n`;
     emailBody += `— Edwin 🎩`;
@@ -271,7 +348,9 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           to: ['andrea@andyou.ph', 'karell@andyou.ph', 'bryan_bumanglag@andyou.ph'],
           cc: ['wesley@andyou.ph'],
-          subject: `📦 Daily Fulfillment Report — ${approvedOrders.length} ready to ship, ${notApprovedOrders.length} pending`,
+          subject: overdueOrders.length > 0
+            ? `🚨 ${overdueOrders.length} OVERDUE | 📦 ${approvedOrders.length} ready to ship, ${notApprovedOrders.length} pending`
+            : `📦 Daily Fulfillment Report — ${approvedOrders.length} ready to ship, ${notApprovedOrders.length} pending`,
           text: emailBody,
           attachments: [
             {
@@ -283,7 +362,12 @@ export default async function handler(req, res) {
               filename: `NOT_APPROVED_${dateStr}.csv`,
               content: btoa(unescape(encodeURIComponent(notApprovedCSV))),
               content_type: 'text/csv'
-            }
+            },
+            ...(awaitingUpsellOrders.length > 0 ? [{
+              filename: `AWAITING_UPSELL_${dateStr}.csv`,
+              content: btoa(unescape(encodeURIComponent(generateCSV(awaitingUpsellOrders)))),
+              content_type: 'text/csv'
+            }] : [])
           ]
         })
       });
@@ -298,11 +382,13 @@ export default async function handler(req, res) {
       throw new Error(`Email send failed (${emailRes.status}): ${err}`);
     }
 
-    res.json({ 
-      success: true, 
-      message: `Email sent with 2 CSV attachments! ${approvedOrders.length} approved, ${notApprovedOrders.length} pending.`,
+    res.json({
+      success: true,
+      message: `Email sent with ${awaitingUpsellOrders.length > 0 ? 3 : 2} CSV attachments! ${approvedOrders.length} approved, ${notApprovedOrders.length} pending.`,
       approved: approvedOrders.length,
-      notApproved: notApprovedOrders.length
+      notApproved: notApprovedOrders.length,
+      awaitingUpsell: awaitingUpsellOrders.length,
+      overdueCount: overdueOrders.length
     });
 
   } catch (error) {
