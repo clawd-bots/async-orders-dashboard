@@ -1,0 +1,200 @@
+
+Let me read all the files that need to be modified first.
+
+
+⚡ [Read]
+
+
+
+⚡ [Read]
+
+
+
+⚡ [Read]
+
+
+
+⚡ [Read]
+
+
+Let me read the full App.jsx since it was truncated.
+
+
+⚡ [Read]
+
+
+
+⚡ [Read]
+
+
+
+⚡ [Read]
+
+
+Now I have a complete picture of all 4 files. Let me implement the changes across all files. I'll work on the API files in parallel.
+
+
+⚡ [Agent]
+
+
+
+⚡ [Agent]
+
+
+
+⚡ [Agent]
+
+
+
+All 3 API files are updated. Now let me update the frontend App.jsx.
+
+
+⚡ [Read]
+
+Now let me make the App.jsx edits. First, add the new state variables and update fetchOrders:
+
+
+⚡ [Edit]
+
+
+
+⚡ [Edit]
+
+Now update the rawOrders to handle the awaitingUpsell tab:
+
+
+⚡ [Edit]
+
+Now add the Awaiting Upsell tile to the summary tiles. Let me read the current tile section:
+
+
+⚡ [Edit]
+
+Now add the "Awaiting Upsell" tab button after the Rejected tab:
+
+
+⚡ [Edit]
+
+Now add the OVERDUE badge and upsell status to the order table rows. Let me find the order name display in the table:
+
+
+⚡ [Edit]
+
+Now update the table header and rendering for the awaitingUpsell tab. Let me update the table section heading and the filter bar to handle the new tab:
+
+
+⚡ [Edit]
+
+Now update the table columns for the awaitingUpsell tab. The awaiting upsell tab should show similar columns to notApproved but with upsell info. Let me update the table header and body:
+
+
+⚡ [Edit]
+
+Now add the awaitingUpsell row rendering before the notApproved columns:
+
+
+⚡ [Edit]
+
+Now update the empty state message for the awaitingUpsell tab:
+
+
+⚡ [Edit]
+
+Now update the CSV download to include upsell columns for the approved tab:
+
+
+⚡ [Edit]
+
+
+
+⚡ [Edit]
+
+Now update the filter logic to handle the awaitingUpsell tab properly — it shouldn't apply delivery filters:
+
+
+⚡ [Edit]
+
+Actually, that was a no-op change. The filter logic already works correctly since it only applies to the approved tab. Let me revert that:
+
+
+⚡ [Edit]
+
+Now let me also update the footer info text to mention the upsell cutoffs:
+
+
+⚡ [Edit]
+
+Now let me verify all files compile correctly by checking for syntax issues:
+
+
+⚡ [Bash]
+
+
+
+⚡ [Bash]
+
+
+
+⚡ [Bash]
+
+
+
+⚡ [Bash]
+
+
+
+⚡ [Bash]
+
+
+
+⚡ [Bash]
+
+Let me just verify the files look correct by reading key sections:
+
+
+⚡ [Read]
+
+
+
+⚡ [Read]
+
+
+
+⚡ [Read]
+
+All files look correct. Let me verify the rest of send-email.js and cron.js email sections:
+
+
+⚡ [Read]
+
+
+
+⚡ [Read]
+
+All files look good. Now let me verify the complete orders.js response and the App.jsx response handling:
+
+
+⚡ [Read]
+
+Everything looks correct. Now let me commit and push:
+
+
+⚡ [Bash]
+
+
+
+⚡ [Bash]
+
+
+
+⚡ [Bash]
+
+Done. Here's a summary of all changes:
+
+**api/orders.js** — Added `upsell` + `upsell_paid` metafields to GraphQL, upsell-aware filtering (orders with `upsell=true` only appear approved when `upsell_paid=true`), overdue calculation using 7AM/12PM PHT cutoffs, new `awaitingUpsell` section + `overdueCount` in response.
+
+**api/cron.js** — Same GraphQL + filtering changes. Email now has OVERDUE section at top, Awaiting Upsell Payment section, upsell status on approved orders, and conditional subject line with overdue count.
+
+**api/send-email.js** — Same GraphQL + filtering changes. CSV now includes Upsell, Upsell Paid, Upsell Paid Date, Overdue columns. Third CSV attachment for awaiting upsell orders. Email body has overdue alert + upsell section.
+
+**src/App.jsx** — New "Awaiting Upsell" tab with orange styling, OVERDUE red badge on order rows, upsell status indicator ("Paid ✅" / "Awaiting Payment ⏳"), Awaiting Upsell summary tile, upsell columns in CSV export.

@@ -488,7 +488,7 @@ function App() {
   const nonConsultOrders = approvedOrders.filter(o => !isAwaitingConsultation(o));
   const allWithDateCount = nonConsultOrders.filter(o => o.preferred_delivery_date && !isDueToday(o)).length;
   const dueTodayCount = nonConsultOrders.filter(o => isDueToday(o) || isOverdue(o)).length;
-  const overdueCount = nonConsultOrders.filter(o => isOverdue(o)).length;
+  const localOverdueCount = nonConsultOrders.filter(o => isOverdue(o)).length;
 
   // Prepare chart data (filter out Sundays for ship time)
   const shipTimeData = metrics?.days?.filter(d => !d.isSunday && d.avgShipTimeHours !== null) || [];
