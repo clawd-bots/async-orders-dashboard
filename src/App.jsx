@@ -869,7 +869,7 @@ function App() {
                         <td style={tdStyle}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span style={{ fontWeight: 600, color: C.accent }}>{order.name}</span>
-                            {order.overdue && (
+                            {order.overdue && !isAwaitingConsultation(order) && (
                               <span style={{ background: C.red, color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4 }}>OVERDUE</span>
                             )}
                           </div>
