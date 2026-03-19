@@ -799,7 +799,7 @@ function App() {
                   { key: 'all', label: 'All', count: approvedOrders.length },
                   { key: 'due_today', label: 'Due Today', count: dueTodayCount },
                   { key: 'with_date', label: 'With Delivery Date', count: allWithDateCount },
-                  { key: 'overdue', label: 'Overdue', count: overdueCount },
+                  { key: 'overdue', label: 'Overdue', count: localOverdueCount },
                   { key: 'awaiting_consult', label: '⏳ Awaiting Consult', count: awaitingConsultCount },
                 ].map(f => (
                   <button key={f.key} onClick={() => setDeliveryFilter(f.key)}
