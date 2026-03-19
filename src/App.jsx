@@ -282,7 +282,6 @@ function App() {
     let newOrders = 0;
     let awaitingConsult = 0;
 
-    const now = new Date();
     const yesterdayPHT = new Date(todayPHT);
     yesterdayPHT.setDate(yesterdayPHT.getDate() - 1);
 
