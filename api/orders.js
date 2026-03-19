@@ -249,6 +249,16 @@ export default async function handler(req, res) {
     };
 
     const isOrderOverdue = (order) => {
+      // If order has a preferred delivery date, use that as the benchmark
+      if (order.preferred_delivery_date) {
+        const now = new Date();
+        const phtNow = new Date(now.getTime() + 8 * 3600000);
+        const todayStr = phtNow.toISOString().slice(0, 10); // YYYY-MM-DD in PHT
+        // Overdue only if delivery date is strictly in the past
+        return order.preferred_delivery_date < todayStr;
+      }
+
+      // No delivery date: fall back to cutoff-based logic
       let startTime;
       if (order.upsell === true) {
         if (!order.upsell_paid) return false;
