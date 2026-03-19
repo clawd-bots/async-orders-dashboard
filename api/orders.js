@@ -296,7 +296,7 @@ export default async function handler(req, res) {
 
     // Awaiting upsell payment: approved but upsell not yet paid
     const awaitingUpsellOrders = filteredOrders
-      .filter(o => o.approved_to_ship === true && (o.upsell === true || o.upsell_paid !== undefined) && o.upsell_paid !== true);
+      .filter(o => o.approved_to_ship === true && (o.upsell === true || o.upsell_paid === false) && o.upsell_paid !== true);
     const notApprovedOrders = filteredOrders.filter(o => {
       if (o.approved_to_ship !== false) return false;
       const ps = o.prescription_status || '';
