@@ -255,83 +255,51 @@ function App() {
     // If today is Sunday (0), we already returned zeros above
     const prevBizDayOffset = phtDay === 1 ? 2 : 1; // Mon → go back 2 days (Sat), else go back 1 day
 
-    // Cutoff hours: 7:30 AM for all orders, 12 noon for sexual health (Erectile Dysfunction)
-    const defaultCutoffHour = 7.5; // 7:30 AM
-    const sexualHealthCutoffHour = 12; // 12 noon
+    // Single cutoff: 7:30 AM PHT every day
+    // Ship Today = effective date between yesterday 7:30 AM and today 7:30 AM
+    // Overdue = effective date before yesterday 7:30 AM
+    const CUTOFF_HOUR = 7;
+    const CUTOFF_MIN = 30;
 
-    // Helper: check if order contains sexual health products
-    const isSexualHealthOrder = (o) => (o.line_items || []).some(li =>
-      (li.product_type || '').toLowerCase().includes('erectile dysfunction')
-    );
+    // Today's 7:30 AM
+    const todayCutoff = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate(), CUTOFF_HOUR, CUTOFF_MIN, 0);
+    // Yesterday's 7:30 AM (or Saturday's if today is Monday)
+    const yesterdayCutoff = new Date(todayCutoff.getTime() - prevBizDayOffset * 86400000);
 
-    // Helper: get cutoff times for a given hour (supports half hours)
-    const makeCutoff = (baseDate, hour) => {
-      const d = new Date(baseDate);
-      d.setHours(Math.floor(hour), (hour % 1) * 60, 0, 0);
-      return d;
-    };
-
-    const yesterdayDefault = makeCutoff(new Date(phtNow.getTime() - prevBizDayOffset * 86400000), defaultCutoffHour);
-    const yesterdaySexHealth = makeCutoff(new Date(phtNow.getTime() - prevBizDayOffset * 86400000), sexualHealthCutoffHour);
-    const todayDefault = makeCutoff(phtNow, defaultCutoffHour);
-    const todaySexHealth = makeCutoff(phtNow, sexualHealthCutoffHour);
-
-    let shipToday = 0; // Orders that need to ship today (past cutoff, ≤24h)
-    let overdue = 0;   // Urgent: >24h past when they should have shipped
+    let shipToday = 0; // Orders due today (effective date between yesterday 7:30AM and today 7:30AM)
+    let overdue = 0;   // Orders overdue (effective date before yesterday 7:30AM)
     let scheduled = 0;
     let newOrders = 0;
     let awaitingConsult = 0;
 
-    const yesterdayPHT = new Date(todayPHT);
-    yesterdayPHT.setDate(yesterdayPHT.getDate() - 1);
-
     for (const o of approvedOrders) {
-      // Orders with "Scheduled" consultation status are held — don't ship yet
       if (isAwaitingConsultation(o)) {
         awaitingConsult++;
         continue;
       }
       if (o.preferred_delivery_date) {
-        // Orders WITH delivery date
         const deliveryDate = new Date(o.preferred_delivery_date + 'T00:00:00');
         const deliveryDatePHT = new Date(deliveryDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
         const deliveryDateOnly = new Date(deliveryDatePHT.getFullYear(), deliveryDatePHT.getMonth(), deliveryDatePHT.getDate());
+        const yesterdayDate = new Date(todayPHT);
+        yesterdayDate.setDate(yesterdayDate.getDate() - 1);
         
-        if (deliveryDateOnly < yesterdayPHT) {
-          // Delivery date is >1 day past → overdue (urgent)
+        if (deliveryDateOnly < yesterdayDate) {
           overdue++;
         } else if (deliveryDateOnly <= todayPHT) {
-          // Delivery date is today or yesterday → Ship Today
           shipToday++;
         } else {
-          // Delivery date is future → scheduled
           scheduled++;
         }
       } else {
-        // Orders WITHOUT delivery date: use cutoff logic
         const ref = getEffectiveApprovalDate(o);
         const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
-        const isSH = isSexualHealthOrder(o);
-        const cutoffH = isSH ? sexualHealthCutoffHour : defaultCutoffHour;
 
-        // Find first cutoff after approval
-        const approvedDay = new Date(approvedPHT.getFullYear(), approvedPHT.getMonth(), approvedPHT.getDate());
-        let firstCutoff = new Date(approvedDay);
-        firstCutoff.setHours(Math.floor(cutoffH), (cutoffH % 1) * 60, 0, 0);
-        if (approvedPHT >= firstCutoff) {
-          firstCutoff.setDate(firstCutoff.getDate() + 1);
-        }
-
-        const hoursSinceCutoff = (now.getTime() - firstCutoff.getTime()) / (1000 * 60 * 60);
-
-        if (hoursSinceCutoff > 24) {
-          // >24h past their cutoff → overdue (urgent)
+        if (approvedPHT < yesterdayCutoff) {
           overdue++;
-        } else if (hoursSinceCutoff > 0) {
-          // Past cutoff but ≤24h → Ship Today
+        } else if (approvedPHT < todayCutoff) {
           shipToday++;
         } else {
-          // Not yet past cutoff → new (due tomorrow)
           newOrders++;
         }
       }
@@ -425,72 +393,57 @@ function App() {
       })
     : rawOrders;
 
-    // Ship Today: needs to go out today — past their cutoff but not yet >24h overdue
-  // Includes: delivery date today or past, OR no-date orders past their cutoff
+    // Ship Today: effective date between yesterday 7:30AM and today 7:30AM,
+  // OR delivery date is today/yesterday
   const isShipToday = (o) => {
     const phtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
     const phtDay = phtNow.getDay();
     if (phtDay === 0) return false;
 
     const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
-    const ref = getEffectiveApprovalDate(o);
-    if (!ref) return false;
 
     if (o.preferred_delivery_date) {
       const deliveryDate = new Date(o.preferred_delivery_date + 'T00:00:00');
       const deliveryDatePHT = new Date(deliveryDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
       const deliveryDateOnly = new Date(deliveryDatePHT.getFullYear(), deliveryDatePHT.getMonth(), deliveryDatePHT.getDate());
-      return deliveryDateOnly <= todayPHT; // today or past
+      const yesterdayDate = new Date(todayPHT);
+      yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+      return deliveryDateOnly >= yesterdayDate && deliveryDateOnly <= todayPHT;
     } else {
-      // No delivery date: ship today if approved before today's cutoff
-      const isSH = (o.line_items || []).some(li => (li.product_type || '').toLowerCase().includes('erectile dysfunction'));
-      const cutoffH = isSH ? 12 : 7.5;
-      const todayCutoff = new Date(phtNow);
-      todayCutoff.setHours(Math.floor(cutoffH), (cutoffH % 1) * 60, 0, 0);
+      const ref = getEffectiveApprovalDate(o);
+      if (!ref) return false;
       const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
-      return approvedPHT < todayCutoff;
+      const prevBizDayOffset = phtDay === 1 ? 2 : 1;
+      const todayCutoff = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate(), 7, 30, 0);
+      const yesterdayCutoff = new Date(todayCutoff.getTime() - prevBizDayOffset * 86400000);
+      return approvedPHT >= yesterdayCutoff && approvedPHT < todayCutoff;
     }
   };
 
-  // Overdue: urgent — >24h since they should have been shipped
-  // For delivery-date orders: delivery date is >1 day in the past
-  // For no-date orders: >24h past their first applicable cutoff
+  // Overdue: effective date before yesterday 7:30AM,
+  // OR delivery date is >1 day in the past
   const isOverdue = (o) => {
-    const now = new Date();
-    const phtNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+    const phtNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
     const phtDay = phtNow.getDay();
     if (phtDay === 0) return false;
 
     const todayPHT = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate());
-    const yesterdayPHT = new Date(todayPHT);
-    yesterdayPHT.setDate(yesterdayPHT.getDate() - 1);
 
     if (o.preferred_delivery_date) {
-      // Overdue if delivery date is strictly before yesterday (i.e. >1 day past)
       const deliveryDate = new Date(o.preferred_delivery_date + 'T00:00:00');
       const deliveryDatePHT = new Date(deliveryDate.toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
       const deliveryDateOnly = new Date(deliveryDatePHT.getFullYear(), deliveryDatePHT.getMonth(), deliveryDatePHT.getDate());
-      return deliveryDateOnly < yesterdayPHT;
+      const yesterdayDate = new Date(todayPHT);
+      yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+      return deliveryDateOnly < yesterdayDate;
     } else {
-      // No delivery date: overdue if >24h past their cutoff
       const ref = getEffectiveApprovalDate(o);
       if (!ref) return false;
-      const isSH = (o.line_items || []).some(li => (li.product_type || '').toLowerCase().includes('erectile dysfunction'));
-      const cutoffH = isSH ? 12 : 7.5;
-
-      // Find the first cutoff after approval
       const approvedPHT = new Date(new Date(ref).toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
-      const approvedDay = new Date(approvedPHT.getFullYear(), approvedPHT.getMonth(), approvedPHT.getDate());
-      let firstCutoff = new Date(approvedDay);
-      firstCutoff.setHours(Math.floor(cutoffH), (cutoffH % 1) * 60, 0, 0);
-      if (approvedPHT >= firstCutoff) {
-        // Approved after cutoff, next cutoff is next day
-        firstCutoff.setDate(firstCutoff.getDate() + 1);
-      }
-
-      // Overdue if >24h past that first cutoff
-      const hoursSinceCutoff = (now.getTime() - firstCutoff.getTime()) / (1000 * 60 * 60);
-      return hoursSinceCutoff > 24;
+      const prevBizDayOffset = phtDay === 1 ? 2 : 1;
+      const todayCutoff = new Date(phtNow.getFullYear(), phtNow.getMonth(), phtNow.getDate(), 7, 30, 0);
+      const yesterdayCutoff = new Date(todayCutoff.getTime() - prevBizDayOffset * 86400000);
+      return approvedPHT < yesterdayCutoff;
     }
   };
 

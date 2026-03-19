@@ -248,17 +248,24 @@ export default async function handler(req, res) {
       return new Date(Date.UTC(year, month, day + 1, 7, 0, 0) - 8 * 3600000);
     };
 
+    // Single cutoff: 7:30 AM PHT
+    // Ship Today = effective date between yesterday 7:30AM and today 7:30AM
+    // Overdue = effective date before yesterday 7:30AM
     const isOrderOverdue = (order) => {
-      // If order has a preferred delivery date, use that as the benchmark
+      const now = new Date();
+      const phtNow = new Date(now.getTime() + 8 * 3600000);
+      const todayStr = phtNow.toISOString().slice(0, 10);
+      const phtDay = phtNow.getUTCDay();
+
       if (order.preferred_delivery_date) {
-        const now = new Date();
-        const phtNow = new Date(now.getTime() + 8 * 3600000);
-        const todayStr = phtNow.toISOString().slice(0, 10); // YYYY-MM-DD in PHT
-        // Overdue only if delivery date is strictly in the past
-        return order.preferred_delivery_date < todayStr;
+        // Overdue if delivery date is >1 day past
+        const yesterday = new Date(phtNow);
+        yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+        const yesterdayStr = yesterday.toISOString().slice(0, 10);
+        return order.preferred_delivery_date < yesterdayStr;
       }
 
-      // No delivery date: fall back to cutoff-based logic
+      // No delivery date: overdue if before yesterday's 7:30AM cutoff
       let startTime;
       if (order.upsell === true) {
         if (!order.upsell_paid) return false;
@@ -267,7 +274,15 @@ export default async function handler(req, res) {
         if (!order.approved_at) return false;
         startTime = new Date(order.approved_at);
       }
-      return new Date() > getNextCutoffAfter(startTime);
+
+      const prevBizDayOffset = phtDay === 1 ? 2 : 1; // Monday → Saturday
+      const year = phtNow.getUTCFullYear();
+      const month = phtNow.getUTCMonth();
+      const day = phtNow.getUTCDate();
+      const todayCutoff = new Date(Date.UTC(year, month, day, 7, 30, 0) - 8 * 3600000); // 7:30AM PHT in UTC
+      const yesterdayCutoff = new Date(todayCutoff.getTime() - prevBizDayOffset * 86400000);
+
+      return startTime < yesterdayCutoff;
     };
 
     // Fulfillment ready: approved AND (no upsell needed OR upsell is paid)
