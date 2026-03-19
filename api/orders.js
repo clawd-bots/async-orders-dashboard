@@ -267,7 +267,7 @@ export default async function handler(req, res) {
 
       // No delivery date: overdue if before yesterday's 7:30AM cutoff
       let startTime;
-      if (order.upsell === true) {
+      if (order.upsell === true || order.upsell_paid === true) {
         if (!order.upsell_paid) return false;
         startTime = new Date(order.upsell_paid_at);
       } else {
@@ -289,14 +289,14 @@ export default async function handler(req, res) {
     const approvedOrders = filteredOrders
       .filter(o => {
         if (o.approved_to_ship !== true) return false;
-        if (o.upsell === true) return o.upsell_paid === true;
+        if (o.upsell === true || o.upsell_paid === true) return o.upsell_paid === true;
         return true;
       })
       .map(o => ({ ...o, overdue: isOrderOverdue(o) }));
 
     // Awaiting upsell payment: approved but upsell not yet paid
     const awaitingUpsellOrders = filteredOrders
-      .filter(o => o.approved_to_ship === true && o.upsell === true && o.upsell_paid !== true);
+      .filter(o => o.approved_to_ship === true && (o.upsell === true || o.upsell_paid !== undefined) && o.upsell_paid !== true);
     const notApprovedOrders = filteredOrders.filter(o => {
       if (o.approved_to_ship !== false) return false;
       const ps = o.prescription_status || '';

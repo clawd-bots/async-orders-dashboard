@@ -224,7 +224,7 @@ export default async function handler(req, res) {
       }
 
       let startTime;
-      if (order.upsell === true) {
+      if (order.upsell === true || order.upsell_paid === true) {
         if (!order.upsell_paid) return false;
         startTime = new Date(order.upsell_paid_at);
       } else {

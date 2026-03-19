@@ -314,7 +314,8 @@ function App() {
   // For others: later of approved_at vs created_at
   const getEffectiveApprovalDate = (order) => {
     // Upsell orders: use the date they paid the upsell
-    if (order.upsell === true && order.upsell_paid_at) {
+    // Check both upsell and upsell_paid flags (some orders only have upsell_paid set)
+    if ((order.upsell === true || order.upsell_paid === true) && order.upsell_paid_at) {
       return order.upsell_paid_at;
     }
 
