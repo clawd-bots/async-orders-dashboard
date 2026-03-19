@@ -230,7 +230,9 @@ function App() {
   // New tile structure logic
   // Check if order was auto-approved (within 5 min of creation) AND has scheduled consultation
   const isAwaitingConsultation = (o) => {
-    if (!o.consultation_status || o.consultation_status.toLowerCase() !== 'scheduled') return false;
+    // consultation_status may be plain string "Scheduled" or JSON array '["Scheduled"]'
+    const cs = (o.consultation_status || '').toLowerCase();
+    if (!cs || !(cs === 'scheduled' || cs.includes('"scheduled"'))) return false;
     // Only hold if approved within 5 minutes of order creation (auto-approval)
     // If manually approved (>5 min), someone already reviewed it — ship normally
     if (!o.approved_at || !o.created_at) return true; // no approval time = treat as auto
@@ -321,8 +323,10 @@ function App() {
 
     // If order was auto-approved (within 5 min) and had a consultation that's now complete,
     // the real approval is when the consultation completed
-    const cs = order.consultation_status?.toLowerCase();
-    if (order.consultation_status_updated_at && cs && cs !== 'scheduled' && cs !== 'not required') {
+    const cs = (order.consultation_status || '').toLowerCase();
+    const isScheduled = cs === 'scheduled' || cs.includes('"scheduled"');
+    const isNotRequired = cs === 'not required' || cs.includes('"not required"');
+    if (order.consultation_status_updated_at && cs && !isScheduled && !isNotRequired) {
       // Only use consultation time if it was auto-approved (within 5 min)
       const created = new Date(order.created_at).getTime();
       const approved = order.approved_at ? new Date(order.approved_at).getTime() : created;
