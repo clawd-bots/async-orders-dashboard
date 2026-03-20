@@ -212,6 +212,10 @@ export default async function handler(req, res) {
     // Single cutoff: 7:30 AM PHT
     // Overdue = effective date before yesterday 7:30AM
     const isOrderOverdue = (order) => {
+      // Skip orders awaiting consultation — not ready to ship
+      const cs = (order.consultation_status || '').toLowerCase();
+      if (cs === 'scheduled' || cs.includes('"scheduled"')) return false;
+
       const now = new Date();
       const phtNow = new Date(now.getTime() + 8 * 3600000);
       const phtDay = phtNow.getUTCDay();
