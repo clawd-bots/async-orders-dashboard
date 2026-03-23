@@ -251,33 +251,45 @@ export default async function handler(req, res) {
     // Single cutoff: 7:30 AM PHT
     // Ship Today = effective date between yesterday 7:30AM and today 7:30AM
     // Overdue = effective date before yesterday 7:30AM
+    // Mirrors dashboard's getEffectiveApprovalDate
+    const getEffectiveApprovalDate = (order) => {
+      if ((order.upsell === true || order.upsell_paid === true) && order.upsell_paid_at) {
+        return order.upsell_paid_at;
+      }
+      const cs = (order.consultation_status || '').toLowerCase();
+      const isScheduled = cs === 'scheduled' || cs.includes('"scheduled"');
+      const isNotRequired = cs === 'not required' || cs.includes('"not required"');
+      if (order.consultation_status_updated_at && cs && !isScheduled && !isNotRequired) {
+        const created = new Date(order.created_at).getTime();
+        const approved = order.approved_at ? new Date(order.approved_at).getTime() : created;
+        const diffMin = (approved - created) / (1000 * 60);
+        if (diffMin <= 5) return order.consultation_status_updated_at;
+      }
+      const approvedAt = order.approved_at ? new Date(order.approved_at) : null;
+      const createdAt = new Date(order.created_at);
+      if (approvedAt && approvedAt > createdAt) return order.approved_at;
+      return order.created_at;
+    };
+
     const isOrderOverdue = (order) => {
-      // Skip orders awaiting consultation — not ready to ship
       const cs = (order.consultation_status || '').toLowerCase();
       if (cs === 'scheduled' || cs.includes('"scheduled"')) return false;
 
       const now = new Date();
       const phtNow = new Date(now.getTime() + 8 * 3600000);
-      const todayStr = phtNow.toISOString().slice(0, 10);
       const phtDay = phtNow.getUTCDay();
+      if (phtDay === 0) return false; // Sundays: nothing overdue
 
       if (order.preferred_delivery_date) {
-        // Overdue if delivery date is >1 day past
         const yesterday = new Date(phtNow);
         yesterday.setUTCDate(yesterday.getUTCDate() - 1);
         const yesterdayStr = yesterday.toISOString().slice(0, 10);
         return order.preferred_delivery_date < yesterdayStr;
       }
 
-      // No delivery date: overdue if before yesterday's 7:30AM cutoff
-      let startTime;
-      if (order.upsell === true || order.upsell_paid === true) {
-        if (!order.upsell_paid) return false;
-        startTime = new Date(order.upsell_paid_at);
-      } else {
-        if (!order.approved_at) return false;
-        startTime = new Date(order.approved_at);
-      }
+      const ref = getEffectiveApprovalDate(order);
+      if (!ref) return false;
+      const startTime = new Date(ref);
 
       const prevBizDayOffset = phtDay === 1 ? 2 : 1; // Monday → Saturday
       const year = phtNow.getUTCFullYear();
