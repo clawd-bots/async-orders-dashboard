@@ -34,6 +34,7 @@ export default async function handler(req, res) {
                 firstName
                 lastName
                 email
+                numberOfOrders
               }
               shippingAddress {
                 phone
@@ -177,6 +178,7 @@ export default async function handler(req, res) {
             last_name: node.customer?.lastName,
             email: node.customer?.email
           },
+          customer_type: node.customer ? (parseInt(node.customer.numberOfOrders, 10) > 1 ? 'RETURNING' : 'NEW') : 'NEW',
           shipping_address: node.shippingAddress ? {
             phone: node.shippingAddress.phone || '',
             address1: node.shippingAddress.address1 || '',
@@ -280,13 +282,14 @@ export default async function handler(req, res) {
 
     // Generate CSV content
     const generateCSV = (orders) => {
-      const headers = ['Order Number', 'Date', 'Customer', 'Email', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Upsell', 'Upsell Paid', 'Upsell Paid Date', 'Overdue', 'Shipped'];
+      const headers = ['Order Number', 'Date', 'Customer', 'Customer Type', 'Email', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Upsell', 'Upsell Paid', 'Upsell Paid Date', 'Overdue', 'Shipped'];
       const rows = orders.flatMap(o => 
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
           Array.from({ length: Math.max(item.quantity || 1, 1) }, () => [
             o.name,
             new Date(o.created_at).toLocaleDateString('en-PH'),
             `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim() || 'Guest',
+            o.customer_type || 'NEW',
             o.customer?.email || '',
             o.shipping_address?.phone || '',
             item.title || '',
@@ -356,6 +359,11 @@ export default async function handler(req, res) {
       emailBody += `💰 **Awaiting Upsell Payment**\n`;
       emailBody += `   ${awaitingUpsellOrders.length} orders · PHP ${awaitingUpsellValue.toLocaleString()}\n\n`;
     }
+
+    const newCustomerCount = filteredOrders.filter(o => o.customer_type === 'NEW').length;
+    const returningCustomerCount = filteredOrders.filter(o => o.customer_type === 'RETURNING').length;
+    emailBody += `👤 **Customer Breakdown**\n`;
+    emailBody += `   ${newCustomerCount} NEW · ${returningCustomerCount} RETURNING\n\n`;
 
     if (oldApprovedOrders.length > 0) {
       emailBody += `⚠️ Heads up: ${oldApprovedOrders.length} approved order(s) are 3+ days old and need attention!\n\n`;

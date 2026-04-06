@@ -217,6 +217,7 @@ export default async function handler(req, res) {
             email: node.customer?.email,
             orders_count: parseInt(node.customer?.numberOfOrders || '0', 10),
           },
+          customer_type: node.customer ? (parseInt(node.customer.numberOfOrders, 10) > 1 ? 'RETURNING' : 'NEW') : 'NEW',
           shipping_address: node.shippingAddress ? {
             phone: node.shippingAddress.phone || '',
             address1: node.shippingAddress.address1 || '',

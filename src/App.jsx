@@ -166,7 +166,7 @@ function App() {
             const alloc = csvAllocations[allocIdx++];
             return [
               o.name,
-              o.customer?.orders_count > 1 ? 'Returning' : 'New',
+              o.customer_type || 'NEW',
               new Date(o.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' }),
               `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim(),
               o.shipping_address?.phone || '',
@@ -196,7 +196,7 @@ function App() {
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
           Array.from({ length: Math.max(item.quantity || 1, 1) }, () => [
             o.name,
-            o.customer?.orders_count > 1 ? 'Returning' : 'New',
+            o.customer_type || 'NEW',
             new Date(o.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' }),
             `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim(),
             o.customer?.email || '',
@@ -871,8 +871,8 @@ function App() {
                         <td style={tdStyle}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span style={{ fontWeight: 600, color: C.accent }}>{order.name}</span>
-                            <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: order.customer?.orders_count > 1 ? '#E8F5E9' : '#E3F2FD', color: order.customer?.orders_count > 1 ? '#2E7D32' : '#1565C0' }}>
-                              {order.customer?.orders_count > 1 ? 'RETURNING' : 'NEW'}
+                            <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: order.customer_type === 'RETURNING' ? '#E8F5E9' : '#E3F2FD', color: order.customer_type === 'RETURNING' ? '#2E7D32' : '#1565C0' }}>
+                              {order.customer_type || 'NEW'}
                             </span>
                             {order.overdue && !isAwaitingConsultation(order) && (
                               <span style={{ background: C.red, color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4 }}>OVERDUE</span>
