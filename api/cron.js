@@ -55,6 +55,7 @@ export default async function handler(req) {
                   firstName
                   lastName
                   email
+                  numberOfOrders
                 }
                 lineItems(first: 10) {
                   edges {
@@ -172,7 +173,8 @@ export default async function handler(req) {
           customer: {
             first_name: node.customer?.firstName,
             last_name: node.customer?.lastName,
-            email: node.customer?.email
+            email: node.customer?.email,
+            orders_count: parseInt(node.customer?.numberOfOrders || '0', 10),
           },
           line_items: node.lineItems?.edges?.map(e => ({
             title: e.node.title,
@@ -284,7 +286,7 @@ export default async function handler(req) {
         overdueOrders.forEach((order, i) => {
           const customerName = [order.customer?.first_name, order.customer?.last_name].filter(Boolean).join(' ') || 'Guest';
           const orderDate = new Date(order.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' });
-          emailBody += `${i + 1}. ${order.name} - ${customerName}\n`;
+          emailBody += `${i + 1}. ${order.name} [${order.customer?.orders_count > 1 ? "RETURNING" : "NEW"}] - ${customerName}\n`;
           emailBody += `   Date: ${orderDate}\n`;
           emailBody += `   Total: ${order.currency} ${parseFloat(order.total_price).toLocaleString()}\n`;
           if (order.upsell === true) {
@@ -305,7 +307,7 @@ export default async function handler(req) {
         awaitingUpsellOrders.forEach((order, i) => {
           const customerName = [order.customer?.first_name, order.customer?.last_name].filter(Boolean).join(' ') || 'Guest';
           const orderDate = new Date(order.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' });
-          emailBody += `${i + 1}. ${order.name} - ${customerName}\n`;
+          emailBody += `${i + 1}. ${order.name} [${order.customer?.orders_count > 1 ? "RETURNING" : "NEW"}] - ${customerName}\n`;
           emailBody += `   Date: ${orderDate}\n`;
           emailBody += `   Total: ${order.currency} ${parseFloat(order.total_price).toLocaleString()}\n`;
           emailBody += `   Upsell: Awaiting Payment ⏳\n`;
@@ -327,7 +329,7 @@ export default async function handler(req) {
           const orderDate = new Date(order.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' });
           const daysAgo = Math.floor((new Date() - new Date(order.created_at)) / (1000 * 60 * 60 * 24));
           
-          emailBody += `${i + 1}. ${order.name} - ${customerName}\n`;
+          emailBody += `${i + 1}. ${order.name} [${order.customer?.orders_count > 1 ? "RETURNING" : "NEW"}] - ${customerName}\n`;
           emailBody += `   Date: ${orderDate} (${daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : daysAgo + ' days ago'})\n`;
           emailBody += `   Total: ${order.currency} ${parseFloat(order.total_price).toLocaleString()}\n`;
           
@@ -372,7 +374,7 @@ export default async function handler(req) {
           const orderDate = new Date(order.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' });
           const daysAgo = Math.floor((new Date() - new Date(order.created_at)) / (1000 * 60 * 60 * 24));
           
-          emailBody += `${i + 1}. ${order.name} - ${customerName}\n`;
+          emailBody += `${i + 1}. ${order.name} [${order.customer?.orders_count > 1 ? "RETURNING" : "NEW"}] - ${customerName}\n`;
           emailBody += `   Date: ${orderDate} (${daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : daysAgo + ' days ago'})\n`;
           emailBody += `   Total: ${order.currency} ${parseFloat(order.total_price).toLocaleString()}\n`;
           

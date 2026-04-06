@@ -42,6 +42,7 @@ export default async function handler(req, res) {
                   firstName
                   lastName
                   email
+                  numberOfOrders
                 }
                 shippingAddress {
                   phone
@@ -213,7 +214,8 @@ export default async function handler(req, res) {
           customer: {
             first_name: node.customer?.firstName,
             last_name: node.customer?.lastName,
-            email: node.customer?.email
+            email: node.customer?.email,
+            orders_count: parseInt(node.customer?.numberOfOrders || '0', 10),
           },
           shipping_address: node.shippingAddress ? {
             phone: node.shippingAddress.phone || '',

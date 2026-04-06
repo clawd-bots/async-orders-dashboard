@@ -159,13 +159,14 @@ function App() {
     if (activeTab === 'approved') {
       const csvAllocations = allocateBatches(csvOrders);
       let allocIdx = 0;
-      headers = ['Order Number', 'Date', 'Customer', 'Phone', 'Product', 'SKU', 'Qty', 'Batch', 'Batch Expiry', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Since Approval', 'Upsell', 'Upsell Paid', 'Upsell Paid Date', 'Overdue', 'Shipped'];
+      headers = ['Order Number', 'Customer Type', 'Date', 'Customer', 'Phone', 'Product', 'SKU', 'Qty', 'Batch', 'Batch Expiry', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Since Approval', 'Upsell', 'Upsell Paid', 'Upsell Paid Date', 'Overdue', 'Shipped'];
       rows = csvOrders.flatMap(o =>
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
           Array.from({ length: Math.max(item.quantity || 1, 1) }, () => {
             const alloc = csvAllocations[allocIdx++];
             return [
               o.name,
+              o.customer?.orders_count > 1 ? 'Returning' : 'New',
               new Date(o.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' }),
               `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim(),
               o.shipping_address?.phone || '',
@@ -190,11 +191,12 @@ function App() {
         )
       );
     } else {
-      headers = ['Order Number', 'Date', 'Customer', 'Email', 'Product', 'SKU', 'Qty', 'Prescription Status', 'Total'];
+      headers = ['Order Number', 'Customer Type', 'Date', 'Customer', 'Email', 'Product', 'SKU', 'Qty', 'Prescription Status', 'Total'];
       rows = csvOrders.flatMap(o =>
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
           Array.from({ length: Math.max(item.quantity || 1, 1) }, () => [
             o.name,
+            o.customer?.orders_count > 1 ? 'Returning' : 'New',
             new Date(o.created_at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila' }),
             `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim(),
             o.customer?.email || '',
@@ -869,6 +871,9 @@ function App() {
                         <td style={tdStyle}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span style={{ fontWeight: 600, color: C.accent }}>{order.name}</span>
+                            <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: order.customer?.orders_count > 1 ? '#E8F5E9' : '#E3F2FD', color: order.customer?.orders_count > 1 ? '#2E7D32' : '#1565C0' }}>
+                              {order.customer?.orders_count > 1 ? 'RETURNING' : 'NEW'}
+                            </span>
                             {order.overdue && !isAwaitingConsultation(order) && (
                               <span style={{ background: C.red, color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4 }}>OVERDUE</span>
                             )}
