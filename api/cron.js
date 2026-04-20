@@ -35,7 +35,7 @@ export default async function handler(req) {
     while (hasNextPage) {
       const query = `
         {
-          orders(first: 250, sortKey: CREATED_AT, reverse: true, query: "fulfillment_status:unfulfilled financial_status:paid"${cursor ? `, after: "${cursor}"` : ""}) {
+          orders(first: 250, sortKey: CREATED_AT, reverse: true, query: "fulfillment_status:unfulfilled (financial_status:paid OR financial_status:partially_refunded)"${cursor ? `, after: "${cursor}"` : ""}) {
             pageInfo {
               hasNextPage
               endCursor

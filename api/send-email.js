@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     
     const query = `
       {
-        orders(first: 250, sortKey: CREATED_AT, reverse: true, query: "fulfillment_status:unfulfilled financial_status:paid") {
+        orders(first: 250, sortKey: CREATED_AT, reverse: true, query: "fulfillment_status:unfulfilled (financial_status:paid OR financial_status:partially_refunded)") {
           edges {
             node {
               id
@@ -274,7 +274,8 @@ export default async function handler(req, res) {
     const awaitingUpsellOrders = filteredOrders
       .filter(o => o.approved_to_ship === true && o.upsell === true && o.upsell_paid !== true);
     const notApprovedOrders = filteredOrders.filter(o => {
-      if (o.approved_to_ship !== false) return false;
+      // Include orders where approved_to_ship is false OR null (not yet reviewed)
+      if (o.approved_to_ship === true) return false;
       const ps = o.prescription_status || '';
       if (ps.toLowerCase().includes('on hold') || ps.toLowerCase().includes('on_hold')) return false;
       return true;
