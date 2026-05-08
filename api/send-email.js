@@ -82,6 +82,9 @@ export default async function handler(req, res) {
                 value
                 updatedAt
               }
+              refundRequiredMetafield: metafield(namespace: "custom", key: "refund_required") {
+                value
+              }
               discountCodes
             }
           }
@@ -172,6 +175,12 @@ export default async function handler(req, res) {
           upsell_paid_at: (() => {
             const v = node.upsellPaidMetafield?.value?.toLowerCase?.() || '';
             return (v === 'true' || v === '1' || v === 'yes') ? (node.upsellPaidMetafield?.updatedAt || null) : null;
+          })(),
+          refund_required: (() => {
+            const v = node.refundRequiredMetafield?.value?.toLowerCase?.() || '';
+            if (v === 'true' || v === '1' || v === 'yes') return true;
+            if (v === 'false' || v === '0' || v === 'no') return false;
+            return null;
           })(),
           customer: {
             first_name: node.customer?.firstName,
@@ -273,6 +282,8 @@ export default async function handler(req, res) {
       .map(o => ({ ...o, overdue: isOrderOverdue(o) }));
     const awaitingUpsellOrders = filteredOrders
       .filter(o => o.approved_to_ship === true && o.upsell === true && o.upsell_paid !== true);
+    const refundRequiredOrders = filteredOrders
+      .filter(o => o.refund_required === true);
     const notApprovedOrders = filteredOrders.filter(o => {
       // Include orders where approved_to_ship is false OR null (not yet reviewed)
       if (o.approved_to_ship === true) return false;
@@ -359,6 +370,15 @@ export default async function handler(req, res) {
     if (awaitingUpsellOrders.length > 0) {
       emailBody += `💰 **Awaiting Upsell Payment**\n`;
       emailBody += `   ${awaitingUpsellOrders.length} orders · PHP ${awaitingUpsellValue.toLocaleString()}\n\n`;
+    }
+
+    if (refundRequiredOrders.length > 0) {
+      emailBody += `🔄 **Refund Required**\n`;
+      refundRequiredOrders.forEach(o => {
+        const name = `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim() || 'Guest';
+        emailBody += `   • ${o.name} — ${name}\n`;
+      });
+      emailBody += `\n`;
     }
 
     const newCustomerCount = filteredOrders.filter(o => o.customer_type === 'NEW').length;
