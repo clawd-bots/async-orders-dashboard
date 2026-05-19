@@ -13,118 +13,140 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Use GraphQL to fetch orders
-    const graphqlUrl = `https://${storeUrl}/admin/api/2024-01/graphql.json`;
-    
-    const query = `
-      {
-        orders(first: 250, sortKey: CREATED_AT, reverse: true, query: "fulfillment_status:unfulfilled (financial_status:paid OR financial_status:partially_refunded)") {
-          edges {
-            node {
-              id
-              name
-              createdAt
-              totalPriceSet {
-                shopMoney {
-                  amount
-                  currencyCode
-                }
-              }
-              customer {
-                firstName
-                lastName
-                email
-                numberOfOrders
-              }
-              shippingAddress {
-                phone
-                address1
-                address2
-                city
-                province
-                zip
-              }
-              lineItems(first: 10) {
-                edges {
-                  node {
-                    title
-                    variantTitle
-                    quantity
-                    sku
-                    fulfillableQuantity
+    const graphqlUrl = `https://${storeUrl}/admin/api/2025-01/graphql.json`;
+
+    // Paginate ALL orders (admin portal does this too)
+    let allOrders = [];
+    let hasNextPage = true;
+    let cursor = null;
+
+    while (hasNextPage) {
+      const query = `
+        {
+          orders(first: 250, sortKey: CREATED_AT, reverse: true, query: "fulfillment_status:unfulfilled financial_status:paid"${cursor ? `, after: "${cursor}"` : ''}) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            edges {
+              node {
+                id
+                name
+                createdAt
+                totalPriceSet {
+                  shopMoney {
+                    amount
+                    currencyCode
                   }
                 }
+                tags
+                customer {
+                  firstName
+                  lastName
+                  email
+                  numberOfOrders
+                }
+                shippingAddress {
+                  phone
+                  address1
+                  address2
+                  city
+                  province
+                  zip
+                }
+                lineItems(first: 10) {
+                  edges {
+                    node {
+                      title
+                      variantTitle
+                      quantity
+                      sku
+                      fulfillableQuantity
+                    }
+                  }
+                }
+                metafield(namespace: "custom", key: "approved_to_ship") {
+                  value
+                  updatedAt
+                }
+                preferredDeliveryMetafield: metafield(namespace: "custom", key: "preferred_delivery") {
+                  value
+                }
+                preferredDeliveryDateMetafield: metafield(namespace: "custom", key: "preferred_delivery_data") {
+                  value
+                }
+                prescriptionStatusMetafield: metafield(namespace: "custom", key: "prescription_status") {
+                  value
+                }
+                consultationStatusMetafield: metafield(namespace: "custom", key: "consultation_status") {
+                  value
+                  updatedAt
+                }
+                orderStatusMetafield: metafield(namespace: "custom", key: "order_status") {
+                  value
+                }
+                upsellMetafield: metafield(namespace: "custom", key: "upsell") {
+                  value
+                }
+                upsellPaidMetafield: metafield(namespace: "custom", key: "upsell_paid") {
+                  value
+                  updatedAt
+                }
+                refundRequiredMetafield: metafield(namespace: "custom", key: "refund_required") {
+                  value
+                }
+                discountCodes
               }
-              metafield(namespace: "custom", key: "approved_to_ship") {
-                value
-                updatedAt
-              }
-              preferredDeliveryMetafield: metafield(namespace: "custom", key: "preferred_delivery") {
-                value
-              }
-              preferredDeliveryDateMetafield: metafield(namespace: "custom", key: "preferred_delivery_data") {
-                value
-              }
-              prescriptionStatusMetafield: metafield(namespace: "custom", key: "prescription_status") {
-                value
-              }
-              consultationStatusMetafield: metafield(namespace: "custom", key: "consultation_status") {
-                value
-                updatedAt
-              }
-              orderStatusMetafield: metafield(namespace: "custom", key: "order_status") {
-                value
-              }
-              upsellMetafield: metafield(namespace: "custom", key: "upsell") {
-                value
-              }
-              upsellPaidMetafield: metafield(namespace: "custom", key: "upsell_paid") {
-                value
-                updatedAt
-              }
-              refundRequiredMetafield: metafield(namespace: "custom", key: "refund_required") {
-                value
-              }
-              discountCodes
             }
           }
         }
+      `;
+
+      const shopifyRes = await fetch(graphqlUrl, {
+        method: 'POST',
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query })
+      });
+
+      if (!shopifyRes.ok) {
+        throw new Error(`Shopify API error: ${shopifyRes.status}`);
       }
-    `;
 
-    const shopifyRes = await fetch(graphqlUrl, {
-      method: 'POST',
-      headers: {
-        'X-Shopify-Access-Token': accessToken,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ query })
-    });
+      const data = await shopifyRes.json();
 
-    if (!shopifyRes.ok) {
-      throw new Error(`Shopify API error: ${shopifyRes.status}`);
+      if (data.errors) {
+        throw new Error(data.errors[0]?.message || 'GraphQL error');
+      }
+
+      const pageOrders = data.data?.orders?.edges || [];
+      allOrders = allOrders.concat(pageOrders);
+
+      hasNextPage = data.data?.orders?.pageInfo?.hasNextPage || false;
+      cursor = data.data?.orders?.pageInfo?.endCursor || null;
     }
 
-    const data = await shopifyRes.json();
-    
-    if (data.errors) {
-      throw new Error(data.errors[0]?.message || 'GraphQL error');
-    }
+    const parseBool = (val) => {
+      const v = (val || '').toLowerCase();
+      if (v === 'true' || v === '1' || v === 'yes') return true;
+      if (v === 'false' || v === '0' || v === 'no') return false;
+      return null;
+    };
 
-    // Process all orders, exclude Keevtest
-    const allOrders = data.data?.orders?.edges || [];
+    // Process all orders, exclude Keevtest and manually refunded
     const filteredOrders = allOrders
       .filter(edge => {
         const discountCodes = edge.node.discountCodes || [];
-        const hasKeevtest = discountCodes.some(code => 
+        const hasKeevtest = discountCodes.some(code =>
           code?.toLowerCase?.().includes('keevtest')
         );
         if (hasKeevtest) return false;
-        
-        // Exclude orders with Order Status = "Manually Refunded"
+
         const orderStatus = edge.node.orderStatusMetafield?.value?.toLowerCase?.() || '';
         if (orderStatus.includes('manually refunded')) return false;
-        
+
         return true;
       })
       .map(edge => {
@@ -135,11 +157,14 @@ export default async function handler(req, res) {
         if (val === 'true' || val === '1' || val === 'yes') approvedToShip = true;
         else if (val === 'false' || val === '0' || val === 'no') approvedToShip = false;
         const approvedAt = approvedToShip === true ? (metafield?.updatedAt || null) : null;
-        
+
         const pdVal = node.preferredDeliveryMetafield?.value?.toLowerCase?.() || '';
-        let preferredDelivery = null;
-        if (pdVal === 'true' || pdVal === '1' || pdVal === 'yes') preferredDelivery = true;
-        else if (pdVal === 'false' || pdVal === '0' || pdVal === 'no') preferredDelivery = false;
+        const preferredDelivery = parseBool(pdVal);
+
+        const upsellVal = node.upsellMetafield?.value?.toLowerCase?.() || '';
+        const upsellPaidVal = node.upsellPaidMetafield?.value?.toLowerCase?.() || '';
+        const upsellPaid = parseBool(upsellPaidVal);
+        const upsellPaidIsTrue = upsellPaidVal === 'true' || upsellPaidVal === '1' || upsellPaidVal === 'yes';
 
         return {
           name: node.name,
@@ -160,28 +185,11 @@ export default async function handler(req, res) {
             } catch { return node.consultationStatusMetafield?.value || null; }
           })(),
           consultation_status_updated_at: node.consultationStatusMetafield?.updatedAt || null,
-          upsell: (() => {
-            const v = node.upsellMetafield?.value?.toLowerCase?.() || '';
-            if (v === 'true' || v === '1' || v === 'yes') return true;
-            if (v === 'false' || v === '0' || v === 'no') return false;
-            return null;
-          })(),
-          upsell_paid: (() => {
-            const v = node.upsellPaidMetafield?.value?.toLowerCase?.() || '';
-            if (v === 'true' || v === '1' || v === 'yes') return true;
-            if (v === 'false' || v === '0' || v === 'no') return false;
-            return null;
-          })(),
-          upsell_paid_at: (() => {
-            const v = node.upsellPaidMetafield?.value?.toLowerCase?.() || '';
-            return (v === 'true' || v === '1' || v === 'yes') ? (node.upsellPaidMetafield?.updatedAt || null) : null;
-          })(),
-          refund_required: (() => {
-            const v = node.refundRequiredMetafield?.value?.toLowerCase?.() || '';
-            if (v === 'true' || v === '1' || v === 'yes') return true;
-            if (v === 'false' || v === '0' || v === 'no') return false;
-            return null;
-          })(),
+          upsell: parseBool(upsellVal),
+          upsell_paid: upsellPaid,
+          upsell_paid_at: upsellPaidIsTrue ? (node.upsellPaidMetafield?.updatedAt || null) : null,
+          refund_required: parseBool(node.refundRequiredMetafield?.value),
+          tags: node.tags || [],
           customer: {
             first_name: node.customer?.firstName,
             last_name: node.customer?.lastName,
@@ -196,7 +204,7 @@ export default async function handler(req, res) {
             province: node.shippingAddress.province || '',
             zip: node.shippingAddress.zip || '',
           } : null,
-          is_provincial: node.shippingAddress?.province ? !['Metro Manila', 'NCR', 'National Capital Region'].some(m => (node.shippingAddress?.province || '').toLowerCase().includes(m.toLowerCase())) : false,
+          is_provincial: (node.tags || []).some(t => t.toLowerCase() === 'provincial'),
           line_items: (node.lineItems?.edges?.map(e => ({
             title: e.node.variantTitle && e.node.variantTitle !== 'Default Title' ? `${e.node.title} — ${e.node.variantTitle}` : e.node.title,
             quantity: e.node.fulfillableQuantity ?? e.node.quantity,
@@ -206,42 +214,7 @@ export default async function handler(req, res) {
         };
       });
 
-    // Overdue helper
-    const getNextCutoffAfter = (date) => {
-      const d = new Date(date);
-      const phtDate = new Date(d.getTime() + 8 * 3600000);
-      const year = phtDate.getUTCFullYear();
-      const month = phtDate.getUTCMonth();
-      const day = phtDate.getUTCDate();
-      const cutoff7am = new Date(Date.UTC(year, month, day, 7, 0, 0) - 8 * 3600000);
-      const cutoff12pm = new Date(Date.UTC(year, month, day, 12, 0, 0) - 8 * 3600000);
-      if (d < cutoff7am) return cutoff7am;
-      if (d < cutoff12pm) return cutoff12pm;
-      return new Date(Date.UTC(year, month, day + 1, 7, 0, 0) - 8 * 3600000);
-    };
-
-    // Single cutoff: 7:30 AM PHT
-    // Overdue = effective date before yesterday 7:30AM
-    // Mirrors dashboard's getEffectiveApprovalDate
-    const getEffectiveApprovalDate = (order) => {
-      if ((order.upsell === true || order.upsell_paid === true) && order.upsell_paid_at) {
-        return order.upsell_paid_at;
-      }
-      const cs = (order.consultation_status || '').toLowerCase();
-      const isScheduled = cs === 'scheduled' || cs.includes('"scheduled"');
-      const isNotRequired = cs === 'not required' || cs.includes('"not required"');
-      if (order.consultation_status_updated_at && cs && !isScheduled && !isNotRequired) {
-        const created = new Date(order.created_at).getTime();
-        const approved = order.approved_at ? new Date(order.approved_at).getTime() : created;
-        const diffMin = (approved - created) / (1000 * 60);
-        if (diffMin <= 5) return order.consultation_status_updated_at;
-      }
-      const approvedAt = order.approved_at ? new Date(order.approved_at) : null;
-      const createdAt = new Date(order.created_at);
-      if (approvedAt && approvedAt > createdAt) return order.approved_at;
-      return order.created_at;
-    };
-
+    // Overdue logic — matches admin portal exactly
     const isOrderOverdue = (order) => {
       const cs = (order.consultation_status || '').toLowerCase();
       if (cs === 'scheduled' || cs.includes('"scheduled"')) return false;
@@ -249,7 +222,6 @@ export default async function handler(req, res) {
       const now = new Date();
       const phtNow = new Date(now.getTime() + 8 * 3600000);
       const phtDay = phtNow.getUTCDay();
-      if (phtDay === 0) return false; // Sundays: nothing overdue
 
       if (order.preferred_delivery_date) {
         const yesterday = new Date(phtNow);
@@ -258,9 +230,14 @@ export default async function handler(req, res) {
         return order.preferred_delivery_date < yesterdayStr;
       }
 
-      const ref = getEffectiveApprovalDate(order);
-      if (!ref) return false;
-      const startTime = new Date(ref);
+      let startTime;
+      if (order.upsell === true || order.upsell_paid === true) {
+        if (!order.upsell_paid) return false;
+        startTime = new Date(order.upsell_paid_at);
+      } else {
+        if (!order.approved_at) return false;
+        startTime = new Date(order.approved_at);
+      }
 
       const prevBizDayOffset = phtDay === 1 ? 2 : 1;
       const year = phtNow.getUTCFullYear();
@@ -272,21 +249,25 @@ export default async function handler(req, res) {
       return startTime < yesterdayCutoff;
     };
 
-    // Split into approved and not approved (explicitly false only, exclude blanks)
+    // Approved: approved AND (no upsell needed OR upsell is paid) — matches admin portal
     const approvedOrders = filteredOrders
       .filter(o => {
         if (o.approved_to_ship !== true) return false;
-        if (o.upsell === true) return o.upsell_paid === true;
+        if (o.upsell === true || o.upsell_paid === true) return o.upsell_paid === true;
         return true;
       })
       .map(o => ({ ...o, overdue: isOrderOverdue(o) }));
+
+    // Awaiting upsell: approved AND (upsell flagged OR upsell_paid is false) AND not yet paid
     const awaitingUpsellOrders = filteredOrders
-      .filter(o => o.approved_to_ship === true && o.upsell === true && o.upsell_paid !== true);
+      .filter(o => o.approved_to_ship === true && (o.upsell === true || o.upsell_paid === false) && o.upsell_paid !== true);
+
     const refundRequiredOrders = filteredOrders
       .filter(o => o.refund_required === true);
+
+    // Not approved: only explicitly false (not null/blank) — matches admin portal
     const notApprovedOrders = filteredOrders.filter(o => {
-      // Include orders where approved_to_ship is false OR null (not yet reviewed)
-      if (o.approved_to_ship === true) return false;
+      if (o.approved_to_ship !== false) return false;
       const ps = o.prescription_status || '';
       if (ps.toLowerCase().includes('on hold') || ps.toLowerCase().includes('on_hold')) return false;
       return true;
@@ -294,8 +275,8 @@ export default async function handler(req, res) {
 
     // Generate CSV content
     const generateCSV = (orders) => {
-      const headers = ['Order Number', 'Date', 'Customer', 'Customer Type', 'Email', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Upsell', 'Upsell Paid', 'Upsell Paid Date', 'Overdue', 'Shipped'];
-      const rows = orders.flatMap(o => 
+      const headers = ['Order Number', 'Date', 'Customer', 'Customer Type', 'Email', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Upsell', 'Upsell Paid', 'Upsell Paid Date', 'Overdue', 'Shipped'];
+      const rows = orders.flatMap(o =>
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
           Array.from({ length: Math.max(item.quantity || 1, 1) }, () => [
             o.name,
@@ -308,6 +289,7 @@ export default async function handler(req, res) {
             item.sku || '',
             1,
             o.shipping_address ? `${o.shipping_address.address1 || ''}${o.shipping_address.address2 ? ', ' + o.shipping_address.address2 : ''}, ${o.shipping_address.city || ''}, ${o.shipping_address.province || ''} ${o.shipping_address.zip || ''}` : '',
+            o.is_provincial ? 'Yes' : 'No',
             o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
             o.preferred_delivery_date || '',
             o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
@@ -319,7 +301,7 @@ export default async function handler(req, res) {
           ])
         )
       );
-      
+
       return [headers, ...rows]
         .map(r => r.map(c => `"${(c || '').toString().replace(/"/g, '""')}"`).join(','))
         .join('\n');
@@ -330,16 +312,16 @@ export default async function handler(req, res) {
 
     // Date for filenames
     const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
-    const todayFormatted = new Date().toLocaleDateString('en-PH', { 
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+    const todayFormatted = new Date().toLocaleDateString('en-PH', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
     });
 
     // Calculate totals for approved
     const approvedValue = approvedOrders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
-    const approvedItems = approvedOrders.reduce((sum, o) => 
+    const approvedItems = approvedOrders.reduce((sum, o) =>
       sum + (o.line_items?.reduce((s, i) => s + i.quantity, 0) || 0), 0);
 
-    // Calculate totals for not approved  
+    // Calculate totals for not approved
     const notApprovedValue = notApprovedOrders.reduce((sum, o) => sum + parseFloat(o.total_price || 0), 0);
     const notApprovedItems = notApprovedOrders.reduce((sum, o) =>
       sum + (o.line_items?.reduce((s, i) => s + i.quantity, 0) || 0), 0);
@@ -363,7 +345,7 @@ export default async function handler(req, res) {
 
     emailBody += `📦 **Ready to Ship (Approved)**\n`;
     emailBody += `   ${approvedOrders.length} orders · PHP ${approvedValue.toLocaleString()} · ${approvedItems} items\n\n`;
-    
+
     emailBody += `⏳ **Pending Approval**\n`;
     emailBody += `   ${notApprovedOrders.length} orders · PHP ${notApprovedValue.toLocaleString()} · ${notApprovedItems} items\n\n`;
 
@@ -401,11 +383,11 @@ export default async function handler(req, res) {
       emailBody += `• AWAITING_UPSELL_${dateStr}.csv — Orders awaiting upsell payment\n`;
     }
     emailBody += `\n`;
-    
+
     emailBody += `Let me know if you need anything else!\n\n`;
     emailBody += `— Edwin 🎩`;
 
-    // Send via AgentMail - using inboxes/messages endpoint for attachment support
+    // Send via AgentMail
     let emailRes;
     try {
       emailRes = await fetch('https://api.agentmail.to/v0/inboxes/edwin@mail.andyou.ph/messages/send', {
@@ -453,11 +435,12 @@ export default async function handler(req, res) {
 
     res.json({
       success: true,
-      message: `Email sent with ${awaitingUpsellOrders.length > 0 ? 3 : 2} CSV attachments! ${approvedOrders.length} approved, ${notApprovedOrders.length} pending.`,
+      message: `Email sent with ${awaitingUpsellOrders.length > 0 ? 3 : 2} CSV attachments! ${approvedOrders.length} approved, ${notApprovedOrders.length} pending. Fetched ${allOrders.length} total orders.`,
       approved: approvedOrders.length,
       notApproved: notApprovedOrders.length,
       awaitingUpsell: awaitingUpsellOrders.length,
-      overdueCount: overdueOrders.length
+      overdueCount: overdueOrders.length,
+      totalOrdersFetched: allOrders.length
     });
 
   } catch (error) {
