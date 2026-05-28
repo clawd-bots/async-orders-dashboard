@@ -3,6 +3,8 @@ export default async function handler(req, res) {
   const storeUrl = process.env.SHOPIFY_STORE_URL;
   const accessToken = process.env.SHOPIFY_ACCESS_TOKEN;
   const agentmailKey = process.env.AGENTMAIL_API_KEY;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!storeUrl || !accessToken) {
     return res.status(400).json({ error: 'Shopify API not configured' });
@@ -93,9 +95,6 @@ export default async function handler(req, res) {
                   updatedAt
                 }
                 refundRequiredMetafield: metafield(namespace: "custom", key: "refund_required") {
-                  value
-                }
-                consultationDateMetafield: metafield(namespace: "custom", key: "consultation_date") {
                   value
                 }
                 discountCodes
@@ -192,7 +191,7 @@ export default async function handler(req, res) {
           upsell_paid: upsellPaid,
           upsell_paid_at: upsellPaidIsTrue ? (node.upsellPaidMetafield?.updatedAt || null) : null,
           refund_required: parseBool(node.refundRequiredMetafield?.value),
-          consultation_date: node.consultationDateMetafield?.value || null,
+          consultation_date: null, // populated from Supabase consultations table below
           tags: node.tags || [],
           customer: {
             first_name: node.customer?.firstName,
@@ -217,6 +216,48 @@ export default async function handler(req, res) {
           })) || []).filter(li => li.fulfillable_quantity > 0)
         };
       });
+
+    // Fetch next upcoming consultation date from Supabase for each patient email
+    // Uses the same consultations.start_time shown in the admin portal's cal.com booking section
+    if (supabaseUrl && supabaseKey) {
+      const patientEmails = [...new Set(filteredOrders.map(o => o.customer?.email).filter(Boolean))];
+      if (patientEmails.length > 0) {
+        try {
+          const now = new Date().toISOString();
+          const consultRes = await fetch(
+            `${supabaseUrl}/rest/v1/consultations?select=id,start_time,status,patients!inner(email)&patients.email=in.(${encodeURIComponent(patientEmails.join(','))})&status=in.(scheduled,ready)&start_time=gte.${now}&order=start_time.asc`,
+            {
+              headers: {
+                'apikey': supabaseKey,
+                'Authorization': `Bearer ${supabaseKey}`,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+
+          if (consultRes.ok) {
+            const consultations = await consultRes.json();
+            // Build email → earliest upcoming start_time map
+            const emailToConsultDate = new Map();
+            for (const c of consultations) {
+              const email = c.patients?.email;
+              if (email && !emailToConsultDate.has(email)) {
+                emailToConsultDate.set(email, c.start_time);
+              }
+            }
+            for (const order of filteredOrders) {
+              if (order.customer?.email && emailToConsultDate.has(order.customer.email)) {
+                order.consultation_date = emailToConsultDate.get(order.customer.email);
+              }
+            }
+          } else {
+            console.error('Supabase consultation query failed:', consultRes.status, await consultRes.text());
+          }
+        } catch (err) {
+          console.error('Failed to fetch consultation dates from Supabase:', err.message);
+        }
+      }
+    }
 
     // Overdue logic — matches admin portal exactly
     const isOrderOverdue = (order) => {
@@ -279,7 +320,7 @@ export default async function handler(req, res) {
 
     // Generate CSV content
     const generateCSV = (orders) => {
-      const headers = ['Order Number', 'Customer Type', 'Date', 'Customer', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Province', 'City', 'Barangay', 'Delivery Date', 'Next Consult Date', 'Approved On', 'Overdue', 'Shipped'];
+      const headers = ['Order Number', 'Customer Type', 'Date', 'Customer', 'Email', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Province', 'City', 'Barangay', 'Delivery Date', 'Next Consult Date', 'Approved On', 'Overdue', 'Shipped'];
       const rows = orders.flatMap(o =>
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
           Array.from({ length: Math.max(item.quantity || 1, 1) }, () => [
@@ -287,6 +328,7 @@ export default async function handler(req, res) {
             o.customer_type || 'NEW',
             new Date(o.created_at).toLocaleDateString('en-PH'),
             `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim() || 'Guest',
+            o.customer?.email || '',
             o.shipping_address?.phone || '',
             item.title || '',
             item.sku || '',
@@ -296,7 +338,7 @@ export default async function handler(req, res) {
             o.shipping_address?.city || '',
             o.shipping_address?.address2 || '',
             o.preferred_delivery_date || '',
-            o.consultation_date || '',
+            o.consultation_date ? new Date(o.consultation_date).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
             o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
             o.overdue ? 'Yes' : 'No',
             'No'
