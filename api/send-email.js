@@ -95,6 +95,9 @@ export default async function handler(req, res) {
                 refundRequiredMetafield: metafield(namespace: "custom", key: "refund_required") {
                   value
                 }
+                consultationDateMetafield: metafield(namespace: "custom", key: "consultation_date") {
+                  value
+                }
                 discountCodes
               }
             }
@@ -189,6 +192,7 @@ export default async function handler(req, res) {
           upsell_paid: upsellPaid,
           upsell_paid_at: upsellPaidIsTrue ? (node.upsellPaidMetafield?.updatedAt || null) : null,
           refund_required: parseBool(node.refundRequiredMetafield?.value),
+          consultation_date: node.consultationDateMetafield?.value || null,
           tags: node.tags || [],
           customer: {
             first_name: node.customer?.firstName,
@@ -275,27 +279,25 @@ export default async function handler(req, res) {
 
     // Generate CSV content
     const generateCSV = (orders) => {
-      const headers = ['Order Number', 'Date', 'Customer', 'Customer Type', 'Email', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Provincial', 'Preferred Delivery', 'Delivery Date', 'Approved On', 'Upsell', 'Upsell Paid', 'Upsell Paid Date', 'Overdue', 'Shipped'];
+      const headers = ['Order Number', 'Customer Type', 'Date', 'Customer', 'Phone', 'Product', 'SKU', 'Qty', 'Shipping Address', 'Province', 'City', 'Barangay', 'Delivery Date', 'Next Consult Date', 'Approved On', 'Overdue', 'Shipped'];
       const rows = orders.flatMap(o =>
         (o.line_items?.length > 0 ? o.line_items : [{ title: '', sku: '', quantity: 0 }]).flatMap(item =>
           Array.from({ length: Math.max(item.quantity || 1, 1) }, () => [
             o.name,
+            o.customer_type || 'NEW',
             new Date(o.created_at).toLocaleDateString('en-PH'),
             `${o.customer?.first_name || ''} ${o.customer?.last_name || ''}`.trim() || 'Guest',
-            o.customer_type || 'NEW',
-            o.customer?.email || '',
             o.shipping_address?.phone || '',
             item.title || '',
             item.sku || '',
             1,
-            o.shipping_address ? `${o.shipping_address.address1 || ''}${o.shipping_address.address2 ? ', ' + o.shipping_address.address2 : ''}, ${o.shipping_address.city || ''}, ${o.shipping_address.province || ''} ${o.shipping_address.zip || ''}` : '',
-            o.is_provincial ? 'Yes' : 'No',
-            o.preferred_delivery === true ? 'Yes' : o.preferred_delivery === false ? 'No' : '',
+            o.shipping_address ? `${o.shipping_address.address1 || ''}${o.shipping_address.address2 ? ', ' + o.shipping_address.address2 : ''}` : '',
+            o.shipping_address?.province || '',
+            o.shipping_address?.city || '',
+            o.shipping_address?.address2 || '',
             o.preferred_delivery_date || '',
+            o.consultation_date || '',
             o.approved_at ? new Date(o.approved_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
-            o.upsell === true ? 'Yes' : 'No',
-            o.upsell_paid === true ? 'Yes' : 'No',
-            o.upsell_paid_at ? new Date(o.upsell_paid_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' }) : '',
             o.overdue ? 'Yes' : 'No',
             'No'
           ])
